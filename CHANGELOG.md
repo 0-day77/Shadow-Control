@@ -28,7 +28,7 @@
 - The autorun validation function
 
 ## [1.0.2] - 2026-05-08
-### Added
+### Fixed
 - Fixed the autorun bug (always ENBALED autorun status)
 
 ## [1.0.3] - 2026-05-08
