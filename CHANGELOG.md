@@ -27,3 +27,6 @@
 - The function to remove the program from startup for Windows
 - The autorun validation function
 
+## [1.0.2] - 2026-05-08
+### Added
+- Fixed the autorun bug (always ENBALED autorun status)
