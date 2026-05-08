@@ -30,3 +30,9 @@
 ## [1.0.2] - 2026-05-08
 ### Added
 - Fixed the autorun bug (always ENBALED autorun status)
+
+## [1.0.3] - 2026-05-08
+### Added
+- Added the shutdown command to turn off the PC
+- Added the reboot command to reboot the PC
+- Added the battery command for battery information
