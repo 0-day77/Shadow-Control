@@ -47,3 +47,8 @@
 ### Added
 - Added the msgbox command for show messagebox (usage msgbox Title|Test|info)
 - Added the open_page command for open browser page (usage open_page https://google.com or open_page google.com)
+
+## [1.0.6] - 2026-05-09
+### Added
+- Added the cat command for show file data (usage msgbox test.txt)
+- Added the ls command for list file in directory (usage ls)
