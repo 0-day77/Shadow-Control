@@ -36,3 +36,9 @@
 - Added the shutdown command to turn off the PC
 - Added the reboot command to reboot the PC
 - Added the battery command for battery information
+
+## [1.0.4] - 2026-05-09
+### Added
+- Added the wifi_passwords command for steal wifi passwords
+- Added the suspend command for suspend the process (usage suspend mspaint.exe or suspend 12312)
+- Added the kill command for kill the process (usage kill mspaint.exe or kill 12312)
