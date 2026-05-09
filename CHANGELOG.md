@@ -42,3 +42,8 @@
 - Added the wifi_passwords command for steal wifi passwords
 - Added the suspend command for suspend the process (usage suspend mspaint.exe or suspend 12312)
 - Added the kill command for kill the process (usage kill mspaint.exe or kill 12312)
+
+## [1.0.5] - 2026-05-09
+### Added
+- Added the msgbox command for show messagebox (usage msgbox Title|Test|info)
+- Added the open_page command for open browser page (usage open_page https://google.com or open_page google.com)

