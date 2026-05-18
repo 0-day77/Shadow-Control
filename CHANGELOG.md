@@ -52,3 +52,9 @@
 ### Added
 - Added the cat command for show file data (usage msgbox test.txt)
 - Added the ls command for list file in directory (usage ls)
+
+## [1.0.7] - 2026-05-09
+### Added
+- Added the local_time command for show local time of client
+- Added the printer for print file to specified printer (usage print file.txt MyPrinterHP228)
+- Added the list_printers for show available printers

